@@ -1,0 +1,40 @@
+---
+description: Core PM workspace conventions — file structure, naming, dates, Asana integration
+alwaysApply: true
+---
+
+# PM Workspace Conventions
+
+Stripe Accelerate PM workspace with ~30 merchant projects. Hybrid architecture: Asana for task management, local markdown for raw content.
+
+## Structure
+
+- `projects/active/<slug>/` — one folder per merchant (kebab-case)
+  - `PROJECT.md` — overview, contacts, links, product activation
+  - `action-items.md` — local backup of action items with #tags
+  - `timeline.md` — chronological activity log
+  - `raw/comms.md` — full email/Slack transcripts (append-only)
+  - `issues/` — technical investigation notes
+  - `drafts/` — email drafts with context and sources
+  - `asana.json` — mapping to Asana task GID and subtask GIDs
+- `sessions/` — daily session logs
+- `scripts/` — automation scripts (sync-to-asana.py)
+- `templates/emails/` — email templates (intro, follow-up, check-in, technical-answer, escalation)
+
+## Asana Integration
+
+- Each merchant = one Asana task on the "[YOUR_BOARD_NAME]" board
+- Action items = Asana subtasks (name: plain action-verb description, with due date; tag lives in the Asana Tag custom field, not the name)
+- **Dual-write**: always create action items in both Asana AND local `action-items.md`
+- Read `asana.json` for task GID before creating subtasks
+- Board sections: Discovery, Integration, Testing, Go-Live, Live, On Hold
+
+## Rules
+
+- Dates: always `YYYY-MM-DD`
+- Folders: `kebab-case`
+- Never delete project data — archive instead
+- Always append to `raw/comms.md`, never overwrite
+- Calendar write ops require human confirmation
+- Merchant name matching: fuzzy, case-insensitive, partial
+- Weekend mode: skip Gmail/Slack/Calendar fetches unless explicitly requested

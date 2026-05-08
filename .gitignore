@@ -1,0 +1,43 @@
+# ── Secrets ──────────────────────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+
+# ── OS ───────────────────────────────────────────────────────────────────────
+.DS_Store
+**/.DS_Store
+Thumbs.db
+
+# ── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# ── Cursor session/local state ───────────────────────────────────────────────
+.cursor/projects/
+.cursor/plans/
+
+# ── Hubble snapshot — regenerated on demand, may contain SFDC data ───────────
+data/hubble-snapshot.json
+
+# ── Drift audit timestamp file (regenerated on every run) ────────────────────
+data/runbooks/drift-audit-last-run.txt
+
+# ── Real merchant data — never commit ────────────────────────────────────────
+# Each contributor's own merchant projects, sessions, and lessons stay local.
+# The repo only ships the example-merchant scaffold + INDEX placeholders.
+projects/active/*/
+!projects/active/example-merchant/
+projects/archive/
+sessions/[0-9]*.md
+data/lessons-learned/*.md
+!data/lessons-learned/README.md
+
+# ── Editor noise ─────────────────────────────────────────────────────────────
+*.swp
+*.swo
+.idea/
+.vscode/

@@ -1,0 +1,11 @@
+{
+  "project_id": "99999999",
+  "project_name": "Example Merchant - [Payments, Connect]",
+  "sfdc_opp_link": "https://stripe.lightning.force.com/lightning/r/Opportunity/REPLACE/view",
+  "kantata_workspace_link": "https://app.mavenlink.com/workspaces/99999999",
+  "csat_link": "https://stripe.co1.qualtrics.com/jfe/form/REPLACE",
+  "account_segment": "SMB",
+  "accelerate_type": "Standard",
+  "project_geography": "AMER",
+  "last_synced": null
+}

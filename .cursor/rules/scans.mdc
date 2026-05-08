@@ -1,0 +1,16 @@
+---
+description: Scan + review delegation pointer — implementation lives in subagents
+alwaysApply: false
+---
+
+# Scan & Review
+
+Scan and review work runs through subagents and the `scan-review` skill. Do not duplicate the protocol here.
+
+- **Per-merchant Gmail/Slack fetch + dedup + log**: `/merchant-scanner` (`.cursor/agents/merchant-scanner.md`)
+- **Per-merchant comms analysis + auto-close + new-item proposals**: `/comms-analyst` (`.cursor/agents/comms-analyst.md`)
+- **End-to-end orchestration**: `.cursor/skills/scan-review/SKILL.md`
+
+The orchestrator-layer rules (log everything, dedup before creating, dual-write Asana + local) live in `.cursor/rules/research-protocol.mdc` under "Scan Protocol".
+
+If you find yourself describing the Incremental Query Protocol, message_id dedup, outbound detection, or batch sizing here, that detail belongs inside `merchant-scanner.md` instead — keep it there.

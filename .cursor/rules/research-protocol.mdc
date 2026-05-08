@@ -1,0 +1,45 @@
+---
+description: Mandatory protocols — research delegation to Jarvis, dual-write enforcement, scan protocol
+alwaysApply: true
+---
+
+# Mandatory Protocols
+
+## Stripe Research
+
+For ANY Stripe technical question, invoke `/stripe-jarvis`. Jarvis owns the entire 3-gate framework (Tier 1 instant / Tier 2 internal search / Tier 3 multi-tool parallel research), the mandatory Sources section, and the disclaimer + feedback paragraphs. Do not duplicate that logic here.
+
+Hard rules that remain enforced at the orchestrator layer:
+- **NEVER** answer Stripe technical questions in the main thread. Always delegate to `/stripe-jarvis` so research stays out of the parent context.
+- If a follow-up relates to Jarvis's prior answer in this conversation, the main thread can paraphrase from existing context. Do not re-invoke Jarvis for clarifying follow-ups already covered.
+
+---
+
+## Dual-Write Protocol (Mandatory)
+
+When the user says an action item is **done, completed, handled, resolved, or closed**:
+
+1. Read `projects/active/<slug>/asana.json` for the merchant's task GID.
+2. Find and complete the matching Asana subtask: `PUT /tasks/{subtask_gid}` with `{ completed: true }`.
+3. Mark `[x]` in local `action-items.md`.
+4. **BOTH must happen in the same response.** Never update just one side.
+
+When **creating** a new action item:
+
+1. Create Asana subtask: `POST /tasks/{parent_gid}/subtasks` with `{ name: "<action-verb description>", due_on, notes: "1-2 sentence context" }`. Subtask name is plain natural language — no `#tag` prefix. Tag lives in the custom field set in step 2.
+2. Multi-home to Action Items project: `POST /tasks/{subtask_gid}/addProject` with `{ project: AI_PROJECT_GID, section: <urgency section> }` + set Merchant, Tag, and Complexity custom fields. Tag is derived from the local `#tag` on the action-items.md line.
+3. Set Complexity on the subtask: `PUT /tasks/{subtask_gid}` with `{ custom_fields: { ASANA_AI_FIELD_COMPLEXITY: <LOW|MEDIUM|HIGH GID> } }`. Auto-score from the local tag: `#log/#track/#schedule` = Low, `#email/#reply/#prep` = Medium, `#research` = High. Override based on context.
+4. Append to local `action-items.md` (format: `- [ ] #tag — Description — Complexity: L/M/H — Owner — Due — Source`).
+5. **ALL FOUR must happen in the same response.**
+
+---
+
+## Scan Protocol (Mandatory)
+
+Scans run via the `scan-review` skill, which fans out `/merchant-scanner` and `/comms-analyst` subagents. The orchestrator-layer rules:
+
+1. **Log EVERY email/thread found** — no selective logging. (Enforced inside `merchant-scanner`.)
+2. **Always update contacts** — if a new email address appears, add it to PROJECT.md Key Contacts and the Email search query.
+3. **Always deduplicate before creating action items** — fuzzy match against existing Asana subtasks AND local `action-items.md`. (Enforced inside `comms-analyst`.)
+4. **Auto-close runs before create.** The Review phase auto-closes stale items matched by outbound activity, then creates new items.
+5. **Present the triage summary** to the user only after all writes complete.

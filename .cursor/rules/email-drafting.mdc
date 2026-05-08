@@ -1,0 +1,34 @@
+---
+description: Email drafting conventions — tone, structure, context gathering
+globs: "**/drafts/**"
+alwaysApply: false
+---
+
+# Email Drafting
+
+## Before drafting
+
+1. Read `PROJECT.md` for context (products, status, contacts)
+2. Read `raw/comms.md` for recent conversation history and tone
+3. Check Asana subtasks for what triggered this email
+4. If technical, apply research tiers from CLAUDE.md
+
+## Draft structure
+
+Save to `projects/active/<slug>/drafts/<topic>.md` with: Context, Research, Sources, Draft (Subject/To/Body), Sent section.
+
+## Tone
+
+- Professional but warm — your voice
+- Lead with the answer/action, context after
+- Bullet points for multi-part responses
+- Always include a clear next step
+- Reference specific ticket/case numbers
+
+## After sending
+
+1. Update `## Sent` section
+2. Append to `raw/comms.md`
+3. Add timeline entry
+4. Complete the Asana subtask that triggered this email
+5. Create follow-up subtask if response expected

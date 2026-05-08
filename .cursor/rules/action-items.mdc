@@ -1,0 +1,47 @@
+---
+description: Action item format, tagging, dedup, and Asana sync rules
+globs: "**/action-items.md"
+alwaysApply: false
+---
+
+# Action Items Format
+
+## Dual-write rule
+
+Action items exist in TWO places:
+1. **Asana** (primary): subtask on the merchant's Asana task. Read `asana.json` for `task_gid`.
+2. **Local** (backup): line in `action-items.md`
+
+Always write to both.
+
+- **Asana subtask name**: plain action-verb description, no `#tag` prefix (e.g. `Send revised contract to ABC Co`). Tag is set as the Asana **Tag custom field** on the subtask, derived from the local `#tag`.
+- **Local line**: keeps the `#tag — Description — …` format below — tags are still useful for grep/filter and the validate hook.
+
+## Local line format
+
+```
+- [ ] #tag — Description — Owner: [who] — Due: [YYYY-MM-DD or ASAP] — Source: [ref]
+```
+
+## Tags (1-3 per item)
+
+| Tag | When |
+|-----|------|
+| `#email` | Send/reply outbound message |
+| `#reply` | Answer a specific merchant question |
+| `#research` | Investigate before acting |
+| `#prep` | Prepare for upcoming meeting |
+| `#schedule` | Create/move/confirm calendar event |
+| `#track` | Check status, no message needed |
+| `#log` | Document something administrative |
+| `#waiting` | Blocked on external party (never alone, pair with action tag) |
+
+## Deduplication
+
+Before adding, check both Asana subtasks AND local file for duplicates.
+
+## Conversation Direction
+
+- Merchant sent last → we owe reply (`#reply` or `#email`)
+- We sent last → merchant owes response (`#waiting` + action tag)
+- Internal thread → `#track` unless action needed
