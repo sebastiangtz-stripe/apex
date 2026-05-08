@@ -1,10 +1,6 @@
 #!/usr/bin/env python3
 """
 Sync local merchant projects to the Asana board.
-
-NOTE: Custom field and enum option GIDs are tagged "REPLACE" — they must be
-overridden via .env (preferred) or by editing the constants below to point at
-your Asana workspace's actual GIDs. See SETUP.md §2 for how to discover them.
 Creates one task per merchant with custom fields and subtasks for action items.
 Saves mapping to projects/active/<slug>/asana.json.
 

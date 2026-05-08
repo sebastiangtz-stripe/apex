@@ -51,7 +51,7 @@ If `commitments.md` doesn't exist, create with the header:
 ```
 # Commitments — <Merchant>
 
-Tracks explicit promises the user made in outbound comms. Auto-maintained by the
+Tracks explicit promises [YOUR_NAME] made in outbound comms. Auto-maintained by the
 scan-review skill. Surfaced at startup when any are `overdue`.
 
 ## Open / Overdue

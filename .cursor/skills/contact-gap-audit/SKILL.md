@@ -63,7 +63,7 @@ For each gap, propose the exact `Email search` query update and present for conf
 
 ```
 proposed for <slug>:
-  from:example.com OR to:example.com OR from:"Jane Doe" OR from:jane.doe@example.com OR to:jane.doe@example.com
+  from:example.com OR to:example.com OR from:"Jane Doe" OR from:jane.personal@example.com OR to:jane.personal@example.com
 ```
 
 Apply with a `StrReplace` on `projects/active/<slug>/PROJECT.md` only after explicit user

@@ -1,6 +1,6 @@
 ---
 name: comms-analyst
-description: Read-only analyst that reads one merchant's full raw/comms.md, timeline.md, and action-items.md to propose (1) auto-closures of stale items based on outbound emails, (2) new action items from unanswered merchant content, and (3) commitments the user made. Returns structured JSON; never writes. Use proactively after merchant-scanner runs, or whenever the scan-review skill enters its Review phase.
+description: Read-only analyst that reads one merchant's full raw/comms.md, timeline.md, and action-items.md to propose (1) auto-closures of stale items based on outbound emails, (2) new action items from unanswered merchant content, and (3) commitments [YOUR_NAME] made. Returns structured JSON; never writes. Use proactively after merchant-scanner runs, or whenever the scan-review skill enters its Review phase.
 model: claude-4.6-sonnet
 readonly: true
 ---
@@ -43,18 +43,18 @@ For each proposed closure, capture:
 For each thread or message since `since` that the merchant participated in, identify:
 
 - **Unanswered merchant questions** that need a `#reply`
-- **Generic follow-ups** the user owes that aren't a specific question → `#email`
-- **Commitments the user made** (e.g. "I'll send you the docs by Friday") → `#email` or `#research` depending on whether it requires investigation
-- **Investigation requests** (technical questions the user needs to research) → `#research` (or `#research` + `#reply` if the answer goes back to the merchant)
+- **Generic follow-ups** [YOUR_NAME] owes that aren't a specific question → `#email`
+- **Commitments [YOUR_NAME] made** (e.g. "I'll send you the docs by Friday") → `#email` or `#research` depending on whether it requires investigation
+- **Investigation requests** (technical questions [YOUR_NAME] needs to research) → `#research` (or `#research` + `#reply` if the answer goes back to the merchant)
 - **Calendar / scheduling needs** → `#schedule`
-- **Status checks the user needs to follow up on** without messaging → `#track`
+- **Status checks [YOUR_NAME] needs to follow up on** without messaging → `#track`
 - **Things blocked on the merchant** → `#waiting` paired with the appropriate action tag
 
 For each, propose:
 - `tags`: list of 1-3 tags
 - `description`: concise, specific
 - `complexity`: auto-score `Low` (`#log`/`#track`/`#schedule`/`#waiting`-only), `Medium` (`#email`/`#reply`/`#prep`), or `High` (`#research`). Override based on actual context (e.g. simple `#reply` confirmation = Low; complex multi-product `#prep` = High).
-- `due_on`: YYYY-MM-DD. Default heuristics: explicit merchant ask = +2 business days; commitment the user made = honor stated date or +5 business days; routine follow-up = +5 business days; `#waiting` = +5 business days from last contact.
+- `due_on`: YYYY-MM-DD. Default heuristics: explicit merchant ask = +2 business days; commitment [YOUR_NAME] made = honor stated date or +5 business days; routine follow-up = +5 business days; `#waiting` = +5 business days from last contact.
 - `source`: short reference like "comms.md 2026-04-22 — re: webhook setup"
 - `notes`: 1-2 sentence context (who, what issue, reference) for the Asana subtask body
 - `suggested_resources`: array of 1-4 pointers the parent will render under a "Suggested Resources:" section in the Asana subtask body. Composition rules:
@@ -83,11 +83,11 @@ If a match exists, **skip** and note in `dedupe_skipped`.
 
 ### 5. Step D — waiting on merchant
 
-Identify threads where the last message is outbound (the user or any address in `MY_OUTBOUND_ADDRESSES`), no merchant reply since, and the wait exceeds 3 days. List these so the parent can surface them in the triage summary.
+Identify threads where the last message is outbound ([YOUR_NAME] or accelerate@), no merchant reply since, and the wait exceeds 3 days. List these so the parent can surface them in the triage summary.
 
 ### 6. Step E — commitments tracker
 
-List explicit commitments the user made in outbound emails ("I'll send you...", "We'll have this ready by...") with the stated date and current status. The parent uses this to flag broken commitments.
+List explicit commitments [YOUR_NAME] made in outbound emails ("I'll send you...", "We'll have this ready by...") with the stated date and current status. The parent uses this to flag broken commitments.
 
 ## Return value
 
@@ -104,7 +104,7 @@ Return ONLY this structured JSON. Do not echo raw email content.
       "local_line_match": "- [ ] #reply — Answer webhook question — Owner: [YOUR_INITIALS] — Due: 2026-04-22 — Source: comms.md 2026-04-15",
       "outbound_subject": "Re: webhook setup",
       "outbound_date": "2026-04-22",
-      "outbound_alias": "your.name@stripe.com",
+      "outbound_alias": "accelerate@stripe.com",
       "confidence": "high|medium|low"
     }
   ],
@@ -146,6 +146,6 @@ If the merchant has no new activity since `since`, return `headline: "no activit
 - **Read-only.** Never modify any file. Never call any write API. Your only output is the JSON above.
 - **Confidence matters.** For `auto_close`, only propose `high` confidence matches. Mark `medium`/`low` so the parent can surface them for human review instead of auto-applying.
 - **Pass-through Asana GIDs.** The parent uses these to call the Asana API directly; if you can't find a GID, omit the proposal rather than guess.
-- **Don't propose action items for purely informational threads** (e.g. system notifications, unrelated cc'd discussions). Only propose where the user or the merchant clearly owes the other something.
+- **Don't propose action items for purely informational threads** (e.g. system notifications, unrelated cc'd discussions). Only propose where [YOUR_NAME] or the merchant clearly owes the other something.
 - **Doc URL confidence**: resource URLs for `kind: "doc"` must come from real `docs.stripe.com` paths. If you are not >80% confident the path exists, omit the doc resource. Mark every doc with `verify: true`.
-- **Inline work is never an action item.** If the only work is "add this contact / domain / channel" or "post an Asana comment", surface it under `inline_gaps` (not `new_items`). Action items are reserved for work that requires the user's outbound, research, or scheduled action.
+- **Inline work is never an action item.** If the only work is "add this contact / domain / channel" or "post an Asana comment", surface it under `inline_gaps` (not `new_items`). Action items are reserved for work that requires [YOUR_NAME]'s outbound, research, or scheduled action.

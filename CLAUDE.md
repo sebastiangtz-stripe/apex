@@ -1,8 +1,10 @@
 # Stripe Accelerate — Project Management Workspace
 
-Conversational PM system for [YOUR_NAME], a Stripe Accelerate consultant managing 25-35 merchant projects. The user talks naturally, Claude interprets intent and manages files.
+Conversational PM system for [YOUR_NAME], a Stripe Accelerate consultant managing 25-35 merchant projects. [YOUR_NAME] talks naturally, Claude interprets intent and manages files.
 
 **Architecture**: Asana is the project and task management layer (board: "[YOUR_BOARD_NAME]"). Local markdown stores raw communications, timelines, issues, drafts, and session logs. Cursor agents are the primary interface — no custom dashboard.
+
+**Shared with Diego via apex**: This workspace is the upstream of a peer-shared agent template at `~/Documents/SGG-Assistant-Template/`, mirrored to GitHub at [`sebastiangtz-stripe/apex`](https://github.com/sebastiangtz-stripe/apex). [YOUR_NAME] and Diego both run their own live workspaces with their own merchant data, both publish improvements (skills, agents, scripts, runbooks, CLAUDE.md changes) to apex via `python3 scripts/sync-template.py --push`, and both pull updates from apex into their own workspaces. Full protocol + roles + conflict rules in [`data/runbooks/template-sync.md`](data/runbooks/template-sync.md). **Never** push merchant data, sessions, or `.env` to apex — the sync script enforces this with a leak scan that fails hard on any merchant token.
 
 ---
 
@@ -44,6 +46,7 @@ On every conversation start, run these in **parallel** where possible:
  - **Priority suggestions**: Per rebalancing rules below
  - **Hubble**: Surface only if `/hubble-analyst` returned non-empty `new_projects`, `archive_candidates`, or material `drift`. Non-blocking otherwise.
  - **Drift audit (weekly)**: If today is Monday OR last `data/runbooks/drift-audit-last-run.txt` mtime >7d, run `python3 scripts/drift-audit.py`. Surface any CRITICAL findings (Section A archived-but-listed, Section C hubble_pid_collisions, Section E future_timestamp). Skip otherwise.
+ - **Template drift (apex)**: Run `python3 scripts/sync-template.py --check`. If it reports DRIFT, surface a single-line note: *"Template drift: N template-relevant paths differ from apex. Run `python3 scripts/sync-template.py --push --message <msg>` after wrap-up."* Non-blocking; informational only.
  - **Last session**: Date, 1-sentence summary, pending count
  - **Quick actions**: 1-2 concrete next steps
 9. At scale (35+): Cap at top 10 items, summarize rest
@@ -201,6 +204,75 @@ Full endpoint reference + JSON parsing gotcha: [`data/runbooks/asana-api.md`](da
 
 ---
 
+## Template Sync Protocol (apex)
+
+This live workspace is the upstream of a peer-shareable agent template at
+`~/Documents/SGG-Assistant-Template/`, mirrored to GitHub at
+[`sebastiangtz-stripe/apex`](https://github.com/sebastiangtz-stripe/apex).
+[YOUR_NAME] and Diego both maintain their own live workspaces (each with their
+own merchant data) and both publish improvements through apex.
+
+**Why**: Improvements happen in real workspaces, where the agent is being
+exercised against real merchant problems. Without a sync layer, those
+improvements stay siloed. Apex is the shared substrate; live workspaces
+contribute up to it.
+
+**Hard rule — never ship merchant data**: The sync script
+[`scripts/sync-template.py`](scripts/sync-template.py) enforces a leak scan
+that fails the sync if any merchant slug, identity token, or 13+ digit Asana
+GID appears in template content. Bypass is not supported.
+
+### Conversational mappings
+
+| User says | Action |
+|---|---|
+| "sync template" / "push to apex" / "publish improvements" | Run `python3 scripts/sync-template.py --push --message "<one-line summary>"`. Always require an explicit message. |
+| "what changed since last sync" / "template drift" | Run `python3 scripts/sync-template.py --check`. List the drifted paths. |
+| "preview template sync" / "dry run" | Run `python3 scripts/sync-template.py --dry-run`. Show the proposed diff + genericization. |
+| "weekly sync report" | Run `python3 scripts/sync-template.py --report`. Surface recent apex commits + staleness. |
+| "pull from apex" | Run `git -C ~/Documents/SGG-Assistant-Template/ pull --rebase`. Then offer to manually walk diffs into the live workspace (no auto-apply — merchant data must be preserved). |
+
+### When to suggest a sync proactively
+
+After **any** of the following lands in the live workspace, surface a
+one-line *"Template-relevant change detected — sync to apex when done?"* note
+at the next conversation turn:
+
+- New or edited file under `.cursor/agents/`, `.cursor/skills/`, `.cursor/rules/`, `.cursor/hooks/`
+- New or edited `scripts/*.py` that isn't under `__pycache__/`
+- New or edited `data/runbooks/*.md`
+- New or edited `templates/emails/*`
+- Edits to `CLAUDE.md`, `.cursor/hooks.json`, `.cursor/settings.json`
+- New `data/lessons-learned/pattern-*.md` (cross-cutting patterns ship; merchant-specific lessons stay local)
+
+**Do not** sync after every single edit — wait for a natural break (end of a
+focused work session, before "wrap up", or when the user says "we're done").
+Batching reduces noise in apex history.
+
+### Conflict handling
+
+The script auto-rebases against `origin/main` before pushing, so peer
+commits from Diego land cleanly. If the rebase fails (true conflict on a
+shared file), the script aborts with the conflicted paths printed — resolve
+manually in `~/Documents/SGG-Assistant-Template/` and re-run.
+
+Once both authors are committing >1×/week, switch from direct-to-main
+pushes to feature-branch + PR review. The runbook covers the migration.
+
+### Full reference
+
+See [`data/runbooks/template-sync.md`](data/runbooks/template-sync.md) for:
+
+- Architecture diagram
+- Roles + responsibilities
+- Inclusion / exclusion list (what's template-relevant)
+- Genericization rules (live → template substitutions)
+- Leak-scan denylist
+- Onboarding Diego's workspace
+- Failure modes + audit trail (`data/runbooks/template-sync-log.md`)
+
+---
+
 ## Agent Delegation (Cursor)
 
 Cursor subagents (`.cursor/agents/*`) handle context-heavy work in isolated windows. Skills (`.cursor/skills/*`) orchestrate sequential workflows. See **Subagent Inventory** above for the full list.
@@ -311,7 +383,7 @@ Rules: session log written at wrap-up only, update `sessions/INDEX.md`, on start
   2. **Name search** — `from:"First Last"` for contacts who use personal/generic email providers. Catches them even if they email from a different personal address.
   3. **Specific address** — `from:personal@gmail.com OR to:personal@gmail.com` for personal email addresses (as fallback alongside the name search).
   - Example (company-only): `from:example.com OR to:example.com`
-  - Example (mixed): `from:example.com OR to:example.com OR from:"Jane Doe" OR from:jane.doe@example.com OR to:jane.doe@example.com`
+  - Example (mixed): `from:example.com OR to:example.com OR from:"Jane Doe" OR from:jane.personal@example.com OR to:jane.personal@example.com`
   - When creating a new project, always set the Email search query using this format. Never leave as TBD if contact info is available.
 - Never delete project data — archive instead.
 - Error handling: timeout → retry once, 403 → note + suggest OAuth check, rate limit → wait 30s, during scans → log error per project and continue.

@@ -12,7 +12,7 @@ Stable reference for action items. CLAUDE.md points here.
 - 1-3 tags (always at least one action tag)
 - Description: action-verb phrase
 - Complexity: `L` / `M` / `H`
-- Owner: usually `[YOUR_INITIALS]` (or specific Stripe internal)
+- Owner: usually `[YOUR_NAME]` (or specific Stripe internal)
 - Due: `YYYY-MM-DD`, `TBD`, or `ASAP`
 - Source: `<YYYY-MM-DD>/<type>:<ref>` — type is `email|slack|meeting|jira|hubble|health-status`
 

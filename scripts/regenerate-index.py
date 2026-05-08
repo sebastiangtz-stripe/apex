@@ -7,7 +7,7 @@ Replaces the hand-maintained INDEX.md (which rotted between 2026-04-11 and 2026-
 Behavior:
   - Reads every projects/active/<slug>/PROJECT.md (Priority, Status, Products, Due, AONR).
   - Groups by Priority: High → Medium → Low → Unspecified.
-  - Computes Flag column from Due relative to today (user's local TZ via system clock).
+  - Computes Flag column from Due relative to today (user's local TZ).
   - Detects projects/archive/<slug> entries — never listed in active sections (eliminates the
     the historical archived-but-listed-as-active class of leaks).
   - Optional Hubble cross-check: surfaces any active/<slug> not present in the snapshot
