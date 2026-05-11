@@ -45,10 +45,13 @@ non-empty ones.
 
 ### Phase 3 — scan-review across all merchants (skill)
 
-Invoke the `scan-review` skill. It fans out `/merchant-scanner` per active merchant in
-parallel (Phase 1 of that skill), then `/comms-analyst` per merchant with new content
-(Phase 2), then the main thread does the dual-write to Asana + local for auto-closures
-and new action items (Phase 3). The output is the standard `## Scan & Review Summary`.
+Invoke the `scan-review` skill. It now has three phases of its own: Phase 0 sweeps the
+Slack handover channel via `/handover-scanner` and bootstraps any new merchants found
+(folder + Asana + Hubble backfill); Phase 1 fans out `/merchant-scanner` per active
+merchant in parallel; Phase 2 fans out `/comms-analyst` per merchant with new content;
+Phase 3 does the dual-write to Asana + local for auto-closures and new action items.
+The output is the standard `## Scan & Review Summary`, now including a `New Handovers`
+section at the top when Phase 0 finds anything.
 
 This is the heaviest phase — expect 30-90s for a full fan-out across ~35 merchants.
 

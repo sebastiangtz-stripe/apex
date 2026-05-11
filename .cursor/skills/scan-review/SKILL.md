@@ -9,9 +9,31 @@ description: >-
 
 # Scan & Review Pipeline
 
-Two phases: Scan (log comms via `/merchant-scanner`) then Review (analyze comms via `/comms-analyst`, then dual-write to Asana + local).
+Three phases: Handover sweep (find new merchants), Scan (log comms via `/merchant-scanner`), Review (analyze via `/comms-analyst`, then dual-write to Asana + local).
 
 The skill is an orchestrator. The heavy lifting (Gmail/Slack fetches, full `raw/comms.md` reads, dedup logic) lives in the subagents so the main thread stays clean.
+
+## Phase 0: Handover sweep
+
+Before per-merchant scanning, check the handover channel(s) for any new
+merchants that need a project bootstrapped.
+
+1. Invoke `/handover-scanner` with no args. It reads `.env` for the channel
+   IDs + the user's Slack handle, dedups against
+   `data/handover-state.json::processed_threads`, parses any new candidate
+   threads through `scripts/handover-parse.py`, and returns
+   `{ proposals: [], skipped: [], errors: [], headline }`.
+2. If `proposals` is non-empty, hand them to the `handover-bootstrap` skill
+   (scan mode — proposals are already structured, no re-parsing). The skill
+   surfaces a one-line preview per proposal, then runs
+   `scripts/handover-create.py` against each. Each successful bootstrap
+   creates `projects/active/<slug>/`, the Asana task, runs
+   `hubble-reconcile.py --backfill`, and updates state.
+3. Hold the per-bootstrap results for the final summary's `New Handovers`
+   section. If `proposals` is empty, this phase is a silent no-op.
+
+Important: Phase 0 runs **before** Phase 1's `ls projects/active/` so any
+projects bootstrapped here are immediately visible to the per-merchant scan.
 
 ## Phase 1: Scan
 
@@ -96,6 +118,10 @@ Present in this format:
 
 ```
 ## Scan & Review Summary — YYYY-MM-DD
+
+### New Handovers (N bootstrapped, M skipped)
+- [Merchant] (`<slug>`) — AE @<ae>, AONR <aonr> — Asana created, Hubble <ok|skipped>
+- (or: "no new handovers")
 
 ### Auto-Closed (N items)
 - [Merchant] #reply — description — matched outbound "subject" on YYYY-MM-DD

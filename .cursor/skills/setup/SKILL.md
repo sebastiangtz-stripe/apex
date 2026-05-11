@@ -126,6 +126,26 @@ Do **not** retry automatically. Discovery failures almost always mean the
 Asana board doesn't match the canonical structure documented in `SETUP.md`,
 and a silent retry just hides the problem.
 
+### Phase 3.5 — Slack handover channel
+
+Two short `AskQuestion` prompts:
+
+1. *"What's your Slack handle (no leading `@`)?"* — free-text follow-up.
+   Write to `.env` as `SLACK_HANDLE=<value>`. Used by `/handover-scanner` to
+   detect when a handover thread tags the user.
+2. *"What's the channel ID for `#ven-ext-stripe-accelerate-amer` (or your
+   region's handover channel)?"* — single-select:
+   - `I'll paste it now` → free-text follow-up, write to `.env` as
+     `HANDOVER_CHANNEL_ID=<value>`.
+   - `Look it up for me` → use the Slack MCP `slack_search` (or equivalent)
+     to find the channel by name; surface the resolved ID and ask the user
+     to confirm before writing.
+   - `Skip for now` → leave as `REPLACE`; the handover scanner will no-op
+     gracefully until the user fills it in later.
+
+`HANDOVER_CHANNEL_ID_LEGACY` is already defaulted in `.env.example` and
+doesn't need user input.
+
 ### Phase 4 — Hubble
 
 The shared saved-query UUID is already defaulted in `.env.example`. This
