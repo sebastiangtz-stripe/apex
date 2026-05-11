@@ -31,7 +31,7 @@ If `.env` looks healthy, run these in **parallel** where possible:
 
 1. Run `TZ="[YOUR_TIMEZONE]" date '+%A %Y-%m-%d %H:%M:%S %Z'` for current date/time (includes day of week). **Always use your local timezone.** Never infer the day of week — read it from the command output.
 2. **Agent A** (Asana reconcile): Run `python3 scripts/asana-reconcile.py` to sync any changes made in Asana since last session (items completed on mobile, etc.).
-3. **Agent B** (silence scan): Read each project's `timeline.md` for last activity date. Compute days since last activity.
+3. **Agent B** (silence scan): Run `python3 scripts/last-activity.py --threshold-days 7 --json` to surface projects silent ≥7 days. Canonical helper parses both `## YYYY-MM-DD` and `## [YYYY-MM-DD]` H2 headers using `max()` (robust against out-of-order entries). Pass `--include-scan-state` if you want scanner activity to count as engagement. Never reimplement this with inline `re.findall + dates[-1]` — that silently inverts the silence direction since timelines are newest-at-top.
 4. **Agent C** (calendar): Fetch today's calendar (skip on weekends — note "Weekend mode").
 5. **Agent D** (session): Read most recent `sessions/*.md` for continuity.
 6. **Agent E** (Hubble sync): Invoke `/hubble-analyst`. It refreshes the snapshot if stale and returns a structured diff (new projects, archive candidates, drift). The verbose JSON stays inside the subagent.

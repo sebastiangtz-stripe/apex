@@ -19,7 +19,7 @@ You are a per-merchant status synthesizer. The parent agent calls you whenever t
 ### 1. Read context (parallel)
 
 - `projects/active/<slug>/PROJECT.md` — Overview block, Status, Priority, Due, AONR, Key Contacts (count), Stripe contacts (count)
-- `projects/active/<slug>/timeline.md` — last 3 entries (parse `## [YYYY-MM-DD]` headers, take the 3 most recent)
+- `projects/active/<slug>/timeline.md` — last 3 entries (parse `## YYYY-MM-DD` or `## [YYYY-MM-DD]` H2 headers, take the 3 most recent by date; timelines are newest-at-top but use `max()` to be robust against out-of-order inserts)
 - `projects/active/<slug>/action-items.md` — Open section; count by tag; flag any OVERDUE
 - `projects/active/<slug>/scan-state.json` — `last_email_scan` and `last_slack_scan` timestamps
 - `projects/active/<slug>/asana.json` — `task_gid` (just for the parent's later use, not surfaced)
@@ -29,7 +29,7 @@ If `slug` doesn't match any folder under `projects/active/`, return `{ "error": 
 
 ### 2. Compute derived fields
 
-- **Days silent**: today - max(`last_email_scan`, `last_slack_scan`, last timeline entry date)
+- **Days silent**: shell out to `python3 scripts/last-activity.py --slug <slug> --include-scan-state --json` — canonical helper that handles both H2 date formats and factors `last_email_scan` / `last_slack_scan`. Read `days_silent` and `last_activity` from the JSON output. Do NOT parse timeline.md inline; previous ad-hoc regex parsers used `dates[-1]` and silently inverted the calc.
 - **Open items by tag**: count of `- [ ]` lines per `#tag` in action-items.md Open section
 - **Overdue items**: items where `Due: <YYYY-MM-DD>` < today
 - **Last activity blurb**: 1-sentence summary of the most recent timeline entry
