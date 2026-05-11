@@ -77,9 +77,19 @@ If `Skip`, jump to Phase 4 and leave Asana keys unset. If `Not yet`, surface
 the link and wait. If `Yes`, ask the user to paste the PAT in their next
 message.
 
-**Critical**: once the PAT is pasted, write it to `.env` and never echo it
-back to chat. In the confirmation message say "PAT stored" — do not include
-even a partial fingerprint.
+**Persist the PAT.** Write it to `.env` immediately as `ASANA_PAT=<value>`.
+This is the one and only time the user should ever have to type it — every
+downstream script (`sync-to-asana.py`, `asana-reconcile.py`,
+`setup-discover-asana.py --pat-from-env`) reads it from `.env`. macOS
+filesystem permissions + `.gitignore` are the security layer; do not invent
+a "more secure" alternative (no keychain prompts, no per-session re-entry,
+no environment-variable-only mode). The user said "I will set this up once".
+
+**Don't echo it back to chat.** After writing, confirm with the literal
+string `PAT stored` — no fingerprint, no first/last characters, no length.
+This is purely a chat-display rule so a screenshot of the conversation
+doesn't expose the token; it has nothing to do with where the token is
+stored.
 
 Then ask, in one chat-turn message, for both board URLs:
 
@@ -178,12 +188,19 @@ You're ready. Say "what's on the board?" to exercise the full auto-startup.
 
 ## Hard rules
 
-- **Never echo the Asana PAT** back to chat after collection. The user pastes
-  it once; the skill stores it in `.env` and confirms with "PAT stored". No
-  fingerprints, no partial reveals, no logging.
+- **Always persist the Asana PAT to `.env`.** The user types it once during
+  Phase 2 and never again. Every downstream script reads it from `.env` via
+  `--pat-from-env` or direct env load. Do not invent alternative storage
+  (keychain, per-session prompt, env-var-only). macOS filesystem permissions
+  + `.gitignore` are the security model.
+- **Never echo the PAT back to chat.** After collection, the only
+  acknowledgement is the literal string `PAT stored`. No fingerprints, no
+  first/last characters, no length, no logging. This is a chat-display rule
+  to keep screenshots of the conversation safe — it does not affect storage.
 - **Never write secrets anywhere except `.env`**. `.env` is in `.gitignore`
-  and never synced to apex. Do not paste the PAT into a comment, a session
-  log, a draft, or a script flag that would land in shell history.
+  and the sync-template leak scan would reject it. Do not paste the PAT into
+  a comment, a session log, a draft, or a script flag that would land in
+  shell history.
 - **Atomic `.env` writes only.** Use the merge logic in
   [`scripts/setup-discover-asana.py`](../../../scripts/setup-discover-asana.py)
   (`write_env`) or call the script with `--write .env` — never `cat >` the
