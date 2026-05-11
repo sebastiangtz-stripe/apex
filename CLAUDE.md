@@ -25,7 +25,9 @@ Specialized Cursor subagents live in `.cursor/agents/`. Each has its own context
 
 ## Auto-Startup Summary
 
-On every conversation start, run these in **parallel** where possible:
+**Step 0 — Fresh-workspace check (before anything else).** Read `.env`. If the file is missing, OR if any value equals `REPLACE` / starts with `REPLACE_WITH`, OR if `ASANA_PAT` is empty: skip the entire auto-startup below and surface a single line — *"Workspace not configured. Run `/setup` to onboard."* Then stop and wait for the user. This prevents a cascade of agent failures on a fresh clone before the user even types anything. Do NOT run any of the steps below until `.env` is fully populated.
+
+If `.env` looks healthy, run these in **parallel** where possible:
 
 1. Run `TZ="[YOUR_TIMEZONE]" date '+%A %Y-%m-%d %H:%M:%S %Z'` for current date/time (includes day of week). **Always use your local timezone.** Never infer the day of week — read it from the command output.
 2. **Agent A** (Asana reconcile): Run `python3 scripts/asana-reconcile.py` to sync any changes made in Asana since last session (items completed on mobile, etc.).

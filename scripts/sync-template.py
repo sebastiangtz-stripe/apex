@@ -381,6 +381,13 @@ def rsync_paths(dry_run=False):
             cmd = ["rsync", "-a", "--delete"]
             for ex in RSYNC_EXCLUDES:
                 cmd.extend(["--exclude", ex])
+            # Also exclude any TEMPLATE_OWNED files that live under this synced dir
+            # (TEMPLATE_OWNED is matched at file granularity; the dir-level check
+            # above only catches whole-directory ownership).
+            for owned in TEMPLATE_OWNED:
+                if owned.startswith(sp.rstrip("/") + "/"):
+                    rel = owned[len(sp.rstrip("/")) + 1:]
+                    cmd.extend(["--exclude", rel])
             if dry_run:
                 cmd.append("--dry-run")
                 cmd.append("-i")
@@ -664,10 +671,13 @@ def main():
     run_contract_validator()
 
     if args.push:
-        # Pull first to incorporate peer changes
-        pull_rebase()
+        # Stage + commit the rsync/genericization output first, then rebase
+        # against any peer pushes on origin/main, then push. (Rebasing before
+        # commit would refuse because the working tree has the rsync output
+        # still unstaged.)
         sha = stage_and_commit(args.message)
         if sha:
+            pull_rebase()
             push_to_origin()
             # Count files in the commit
             count = int(run(["git", "-C", str(TEMPLATE_ROOT), "show", "--stat",
