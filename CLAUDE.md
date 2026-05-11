@@ -63,7 +63,7 @@ Interpret intent, not rigid commands. Key mappings:
 
 | User says | Action |
 |---|---|
-| "New project: [Merchant], [acct_id]" | Create `projects/active/<merchant-kebab>/` with template files, create Asana task in Integration section, save GID to `asana.json`, update INDEX.md |
+| "New project: [Merchant], [acct_id]" | Create `projects/active/<merchant-kebab>/` with template files, populate `## External Links` with the four canonical labels (`Handover:`, `Manifest:`, `Salesforce:`, `Kantata Workspace:`) — extract `Handover` (Slack permalink) + `Manifest` (admin URL) from the handover thread when handing-over from Slack; `Salesforce` + `Kantata Workspace` come from Hubble (via `hubble-reconcile.py --backfill`). Create Asana task in Integration section, save GID to `asana.json`, update INDEX.md. |
 | "Here's the transcript from my call with [merchant]" | Save to `raw/comms.md`, summary to `timeline.md`, extract action items as Asana subtasks |
 | "What's happening with [merchant]?" | Read PROJECT.md + timeline.md + Asana task (status, subtasks), concise status |
 | "What are my priorities?" | Read Asana board for open subtasks + local timelines for silence detection |
@@ -346,7 +346,7 @@ Suggest changes when:
 
 ## Project Lifecycle
 
-1. **Create**: New merchant (detected via Hubble snapshot NEW rows, Slack handover, or manual) → create `projects/active/<slug>/` with template files (copy Kantata Project ID, Kantata Workspace, Salesforce URL, CSAT from Hubble snapshot; acct_id + contacts still manual), then run `python3 scripts/sync-to-asana.py --slug <slug>` to create Asana task + subtasks, followed by `python3 scripts/hubble-reconcile.py --backfill --slug <slug>` to write `hubble.json`
+1. **Create**: New merchant (detected via Hubble snapshot NEW rows, Slack handover, or manual) → create `projects/active/<slug>/` with template files. Populate `## External Links` with the four canonical labels the Asana sync expects: `Handover:` (Slack permalink from the handover thread — feeds Asana `HO:`), `Manifest:` (admin.corp.stripe.com/account-manifest/accma_... — feeds `MAN:`), `Salesforce:` (feeds `SF:`), `Kantata Workspace:` (feeds `KAN:`). `Handover` + `Manifest` come from the handover thread; `Salesforce` + `Kantata Workspace` are auto-backfilled by `hubble-reconcile.py --backfill`. acct_id + Key Contacts still manual. Then run `python3 scripts/sync-to-asana.py --slug <slug>` to create Asana task + subtasks, followed by `python3 scripts/hubble-reconcile.py --backfill --slug <slug>` to write `hubble.json` and confirm the Hubble-sourced links.
 2. **Track**: Log meetings, emails, Slack, decisions, action items (dual-write: Asana + local)
 3. **Investigate**: Use Stripe tools when issues arise, log findings
 4. **Archive**: When merchant goes live or project ends → verify all Asana subtasks completed, complete the Asana task, set "Active on Accelerate?" to NO (`PUT /tasks/{gid}` with `custom_fields: {ASANA_FIELD_ACTIVE: ASANA_FIELD_ACTIVE_NO}`), add final timeline entry, **invoke `/lessons-extract <slug>` to capture institutional knowledge into `data/lessons-learned/<slug>.md`** (and any `pattern-*.md` if cross-cutting patterns emerged), move to `archive/`, regenerate INDEX.md (`python3 scripts/regenerate-index.py`).

@@ -337,16 +337,27 @@ def is_date(s):
 def build_description(info):
     parts = []
 
-    # Links header
-    sf = ""
+    # ── Links header ─────────────────────────────────────────────────────────
+    # Four canonical fields, populated from PROJECT.md '## External Links':
+    #   HO  — Handover (Slack permalink from the handover thread)
+    #   MAN — Manifest (admin.corp.stripe.com/account-manifest/accma_...)
+    #         Falls back to legacy `Dashboard:` label for projects that
+    #         predate the rename.
+    #   SF  — Salesforce Opportunity (auto-backfilled by hubble-reconcile.py)
+    #   KAN — Kantata Workspace      (auto-backfilled by hubble-reconcile.py)
+    labels = {}
     for line in info["external_links"]:
-        m = re.match(r"- Salesforce:\s*(.+)", line)
+        m = re.match(r"-\s*([^:]+?)\s*:\s*(.+?)\s*$", line)
         if m:
-            sf = m.group(1).strip()
-    parts.append(f"HO: ")
-    parts.append(f"MAN: ")
-    parts.append(f"SF: {sf}")
-    parts.append(f"KAN: ")
+            labels[m.group(1).strip().lower()] = m.group(2).strip()
+    handover = labels.get("handover", "")
+    manifest = labels.get("manifest") or labels.get("dashboard", "")
+    salesforce = labels.get("salesforce", "")
+    kantata = labels.get("kantata workspace") or labels.get("kantata", "")
+    parts.append(f"HO: {handover}")
+    parts.append(f"MAN: {manifest}")
+    parts.append(f"SF: {salesforce}")
+    parts.append(f"KAN: {kantata}")
     parts.append("")
     parts.append("---")
     parts.append("")

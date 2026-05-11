@@ -28,10 +28,11 @@ context).
 - **Stripe contacts**: [names]
 
 ## External Links
+- Handover: [Slack permalink from the handover thread, e.g. https://stripe.slack.com/archives/C0.../p1...]
+- Manifest: [https://admin.corp.stripe.com/account-manifest/accma_xxx]
+- Salesforce: [https://stripe.lightning.force.com/lightning/r/Opportunity/<opp_id>/view]
 - Kantata Project ID: [numeric ID from Hubble, e.g. 45320322]
 - Kantata Workspace: [https://app.mavenlink.com/workspaces/<kantata_id>]
-- Salesforce: [https://stripe.lightning.force.com/lightning/r/Opportunity/<opp_id>/view]
-- Dashboard: [account manifest URL]
 - CSAT: [survey link]
 
 ## Product Activation
