@@ -1,0 +1,37 @@
+{
+  "fetched_at": "2026-05-10T00:00:00Z",
+  "lead_filter": "Test User",
+  "saved_query_id": "test-query",
+  "hubble_query_id": "test-query-short",
+  "row_count": 2,
+  "projects": [
+    {
+      "project_id": 99999999,
+      "project_name": "Example Merchant - [Payments, Connect]",
+      "sfdc_opp_link": "https://stripe.lightning.force.com/lightning/r/Opportunity/REPLACE/view",
+      "kantata_workspace_link": "https://app.mavenlink.com/workspaces/99999999",
+      "csat_link": "https://stripe.co1.qualtrics.com/jfe/form/REPLACE",
+      "account_segment": "SMB",
+      "accelerate_type": "Standard",
+      "project_geography": "AMER",
+      "sfdc_aonr": 50000,
+      "account_executive": "Test AE",
+      "kantata_start_date": "2026-01-15",
+      "kantata_end_date": "2026-04-15"
+    },
+    {
+      "project_id": 88888888,
+      "project_name": "New Unmatched Merchant - [Billing]",
+      "sfdc_opp_link": "https://stripe.lightning.force.com/lightning/r/Opportunity/006NEWOPPTY/view",
+      "kantata_workspace_link": "https://app.mavenlink.com/workspaces/88888888",
+      "csat_link": null,
+      "account_segment": "MidMarket",
+      "accelerate_type": "Premium",
+      "project_geography": "EMEA",
+      "sfdc_aonr": 100000,
+      "account_executive": "Other AE",
+      "kantata_start_date": "2026-02-01",
+      "kantata_end_date": "2026-05-01"
+    }
+  ]
+}

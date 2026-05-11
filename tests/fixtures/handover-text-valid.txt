@@ -1,0 +1,9 @@
+Hi team, can you please help to review this manifest for Accelerate: Acme Corp: Payments, Connect
+
+- Current eligibility: Active
+- SFDC: https://stripe.lightning.force.com/lightning/r/Opportunity/006TESTOPPTY12345/view
+- Manifest: https://admin.corp.stripe.com/account-manifest/accma_test123abc456
+- Contact: Jane Smith - jane.smith@example.com
+- Territory: SMB AMER
+
+@testhandle this one is coming to you, please review the details and setup the project.

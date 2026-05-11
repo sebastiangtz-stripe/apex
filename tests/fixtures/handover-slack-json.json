@@ -1,0 +1,17 @@
+{
+  "channel_id": "C0TEST1234",
+  "thread_ts": "1700000000.000001",
+  "permalink": "https://test-workspace.slack.com/archives/C0TEST1234/p1700000000000001",
+  "messages": [
+    {
+      "user_name": "ae_user",
+      "text": "Hi team, can you please help to review this manifest for Accelerate: Acme Corp: Payments, Connect\n\n- Current eligibility: Active\n- SFDC: https://stripe.lightning.force.com/lightning/r/Opportunity/006TESTOPPTY12345/view\n- Manifest: https://admin.corp.stripe.com/account-manifest/accma_test123abc456\n- Contact: Jane Smith - jane.smith@example.com\n- Territory: SMB AMER",
+      "ts": "1700000000.000001"
+    },
+    {
+      "user_name": "ae_user",
+      "text": "@testhandle this one is coming to you, please review the details and setup the project.",
+      "ts": "1700000001.000001"
+    }
+  ]
+}

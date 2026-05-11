@@ -500,6 +500,23 @@ def leak_scan():
 
 # ── Validation ───────────────────────────────────────────────────────────────
 
+def run_smoke_tests():
+    """Run tests/smoke.py if it exists."""
+    step("Run smoke tests (tests/smoke.py)")
+    smoke_script = TEMPLATE_ROOT / "tests" / "smoke.py"
+    if not smoke_script.exists():
+        info("tests/smoke.py not found — skipping")
+        return
+    result = run(["python3", str(smoke_script)],
+                 cwd=str(TEMPLATE_ROOT), capture=True, check=False)
+    if result.returncode != 0:
+        print(result.stdout, file=sys.stderr)
+        print(result.stderr, file=sys.stderr)
+        fail("Smoke tests failed — see output above.")
+    last_line = result.stdout.strip().splitlines()[-1] if result.stdout.strip() else ""
+    info(last_line)
+
+
 def run_contract_validator():
     """Run scripts/test-subagents.py inside the template."""
     step("Run contract validator (scripts/test-subagents.py)")
@@ -668,6 +685,7 @@ def main():
         return
 
     leak_scan()
+    run_smoke_tests()
     run_contract_validator()
 
     if args.push:
