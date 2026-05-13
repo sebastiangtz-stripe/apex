@@ -14,8 +14,8 @@ Specialized Cursor subagents live in `.cursor/agents/`. Each has its own context
 
 | Subagent | Use for | Model |
 |----------|---------|-------|
-| `merchant-scanner` | Per-merchant Gmail + Slack scan with dedup. Always fanned out in parallel by the `scan-review` skill. | claude-4.6-sonnet |
-| `comms-analyst` | Read-only review of one merchant's full `raw/comms.md` to propose auto-closures + new action items. Main thread executes the dual-write. | claude-4.6-sonnet |
+| `merchant-scanner` | Lightweight fetch relay — calls Gmail/Slack MCP, dumps raw results to `data/staging/`. No dedup, no writes to project files. | claude-4.6-sonnet |
+| `comms-analyst` | Read-only review of one merchant's full `raw/comms.md` to propose auto-closures, new action items, Asana comments, and timeline summaries. | claude-4.6-sonnet |
 | `hubble-analyst` | Refresh `data/hubble-snapshot.json` if stale, run `scripts/hubble-reconcile.py`, return structured diff. Used by Auto-Startup Agent E. | fast |
 | `stripe-jarvis` | Any Stripe technical question (Tier 1/2/3 owned by Jarvis itself). Self-contained: searches internal docs, Trailhead, Sourcegraph, Jira, Slack, public docs. | claude-opus-4-7 (Max Mode) |
 
@@ -35,8 +35,10 @@ If `.env` looks healthy, run these in **parallel** where possible:
 4. **Agent C** (calendar): Fetch today's calendar (skip on weekends — note "Weekend mode").
 5. **Agent D** (session): Read most recent `sessions/*.md` for continuity.
 6. **Agent E** (Hubble sync): Invoke `/hubble-analyst`. It refreshes the snapshot if stale and returns a structured diff (new projects, archive candidates, drift). The verbose JSON stays inside the subagent.
-7. After agents complete, read `action-items.md` files for overdue/upcoming items (3 days), and read `commitments.md` files (where present) for any `Status: overdue` lines. Asana is the authority for open items; local files are the backup.
-8. Present concise summary:
+7. **Pending dual-writes check** (cheap filesystem scan, ~1s): list `data/scan-proposals/*.json` (one level deep, NOT including `applied/`). If any non-archived files exist, the prior session ended with proposals that did not finish applying. Read each file's `apply_status`; count items still in non-terminal states (anything other than `applied`, `skipped_dedup`, `skipped_low_confidence`, `skipped_human_review`). Surface in the startup summary as a top-priority line. Run `python3 scripts/apply-proposals.py --resume` to apply them — the script is idempotent (re-running on already-applied items is a no-op) and respects a `--max-age-days 7` guard for stale proposals. NEVER skip this check; it is the recovery path for the 2026-05-12-class failure mode where 44 dual-writes were silently lost.
+8. After agents complete, read `action-items.md` files for overdue/upcoming items (3 days), and read `commitments.md` files (where present) for any `Status: overdue` lines. Asana is the authority for open items; local files are the backup.
+9. Present concise summary:
+ - **Pending dual-writes** (top of summary if any): "N proposals across M merchants from prior session not yet applied. Run `python3 scripts/apply-proposals.py --resume` to apply." Always surface first if non-empty — it represents work the prior session believed was committed but wasn't.
  - **Asana sync**: Changes detected by reconcile (if any)
  - **Today's schedule**: Meetings with merchant matches
  - **Silent merchants**: Projects with no activity in 7+ days, sorted by AONR. 7-13d = "Silent", 14+d = "CRITICAL — Silent". Suggest: scan email/Slack, ping contact, check with SFDC Opportunity Owner.
@@ -48,10 +50,11 @@ If `.env` looks healthy, run these in **parallel** where possible:
  - **Priority suggestions**: Per rebalancing rules below
  - **Hubble**: Surface only if `/hubble-analyst` returned non-empty `new_projects`, `archive_candidates`, or material `drift`. Non-blocking otherwise.
  - **Drift audit (weekly)**: If today is Monday OR last `data/runbooks/drift-audit-last-run.txt` mtime >7d, run `python3 scripts/drift-audit.py`. Surface any CRITICAL findings (Section A archived-but-listed, Section C hubble_pid_collisions, Section E future_timestamp). Skip otherwise.
+ - **Dual-write health (last 7 days)**: Run `python3 scripts/dual-write-health.py --oneliner`. Surface only if there are pending review items, drift, or zero clean runs. Skip otherwise. This is the public-facing rollup of the resilience pipeline (Phase 6 of dual-write-resilience).
  - **Template drift (apex)**: Run `python3 scripts/sync-template.py --check`. If it reports DRIFT, surface a single-line note: *"Template drift: N template-relevant paths differ from apex. Run `python3 scripts/sync-template.py --push --message <msg>` after wrap-up."* Non-blocking; informational only.
  - **Last session**: Date, 1-sentence summary, pending count
  - **Quick actions**: 1-2 concrete next steps
-9. At scale (35+): Cap at top 10 items, summarize rest
+10. At scale (35+): Cap at top 10 items, summarize rest
 
 ---
 
@@ -133,11 +136,12 @@ Runs at the start of every session as part of auto-startup (Agent A above), and 
 
 Triggered when the user says "scan email", "scan Slack", "check all projects", "review open items", or "what's new". Owned by the `scan-review` skill (`.cursor/skills/scan-review/SKILL.md`):
 
-- Phase 1 fans out `/merchant-scanner` per active merchant (Incremental Query Protocol, dedup by message_id, log every email/thread to `raw/comms.md` + `timeline.md`, update `scan-state.json`).
-- Phase 2 fans out `/comms-analyst` per merchant with new content (read-only proposals: auto-closures + new items + waiting list + commitments).
-- Main thread executes the dual-write to Asana + local `action-items.md` and presents the consolidated triage summary.
+- **Phase 1a** — fans out `/merchant-scanner` fetch-relay subagents per active merchant. Each dumps raw MCP results to `data/staging/<slug>-<date>.json`. No writes to project files.
+- **Phase 1b** — runs `python3 scripts/ingest-comms.py` which deterministically processes staging files: dedup, identity gate, writes to `raw/comms.md` + `timeline.md`, updates `scan-state.json`, contact discovery.
+- **Phase 2** — fans out `/comms-analyst` per merchant with new content (read-only proposals: auto-closures, new items, Asana comments, timeline summaries, commitments).
+- **Phase 2.5** — persists proposals to `data/scan-proposals/`, then runs `python3 scripts/apply-proposals.py --resume` for all Asana + local writes.
 
-All implementation detail (TTL, outbound detection, auto-close criteria, complexity scoring, summary format) lives inside the subagent and skill files — not here.
+The LLM never writes to project files during scanning — all writes go through deterministic Python scripts (`ingest-comms.py` for logging, `apply-proposals.py` for action items). This eliminates the class of bug where an LLM context crash drops in-flight writes.
 
 ### Meeting Prep ("Prep me for [merchant]")
 Owned by the `meeting-prep` skill. Parallel reads: PROJECT.md + Asana subtasks + last 3 comms + fresh Gmail/Slack (only if last scan >4h). Output: prep doc to `drafts/prep-YYYY-MM-DD.md` + 30-second verbal summary.
@@ -284,8 +288,8 @@ Cursor subagents (`.cursor/agents/*`) handle context-heavy work in isolated wind
 |---|---|
 | Quick lookup | Direct tool call, no subagent |
 | Stripe technical question | `/stripe-jarvis` (always — never answer in main thread) |
-| Email/Slack scan (one merchant or all) | `scan-review` skill → fans out `/merchant-scanner` per merchant in parallel |
-| Review phase after scan | `scan-review` skill → fans out `/comms-analyst` per merchant; main thread does the dual-write |
+| Email/Slack scan (one merchant or all) | `scan-review` skill → fans out `/merchant-scanner` (fetch relay) → `python3 scripts/ingest-comms.py` |
+| Review phase after scan | `scan-review` skill → fans out `/comms-analyst` per merchant → `python3 scripts/apply-proposals.py --resume` |
 | Hubble snapshot refresh + diff | `/hubble-analyst` (Auto-Startup Agent E or on demand) |
 | Auto-Startup | 5 parallel agents: A (Asana reconcile), B (silence scan), C (calendar), D (session), E (Hubble) |
 | Meeting Prep | `meeting-prep` skill (parallel reads of PROJECT.md + Asana + comms + fresh Gmail/Slack) |

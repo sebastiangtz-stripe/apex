@@ -21,6 +21,8 @@ Usage:
   python3 scripts/test-subagents.py --section agents,skills,rules
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import re

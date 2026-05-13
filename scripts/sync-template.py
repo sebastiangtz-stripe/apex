@@ -125,9 +125,13 @@ GENERICIZATION_RULES = [
     ("Owner: [YOUR_INITIALS]", "Owner: [YOUR_INITIALS]"),
 ]
 
-# Asana GIDs in sync-to-asana.py — replace any quoted 13+ digit number with "REPLACE"
+# Asana GIDs — replace any quoted 13+ digit number with "REPLACE" in these files.
 GID_PATTERN = re.compile(r'"(\d{13,})"')
-GID_FILE_ALLOWLIST = {"scripts/sync-to-asana.py"}
+GID_FILE_ALLOWLIST = {
+    "scripts/sync-to-asana.py",
+    "scripts/apply-proposals.py",
+    "scripts/asana-reconcile.py",
+}
 
 # Product-brand abstractions (live workspace mentions real product brands;
 # template uses Greek-letter placeholders to keep the PBD rule meaningful
@@ -210,6 +214,28 @@ PRODUCT_BRAND_RULES = [
     ("- `pattern-customer-currency-lock.md`", "- `pattern-customer-currency-lock.md`"),
     ("- `pattern-cnp-tipping-overcapture.md`", "- `pattern-cnp-tipping-overcapture.md`"),
     ("- `pattern-paid-out-of-band-migration.md`", "- `pattern-paid-out-of-band-migration.md`"),
+
+    # scripts/lib/__init__.py — docstring
+    ("Shared utilities for Accelerate Assistant scripts.",
+     "Shared utilities for Accelerate Assistant scripts."),
+
+    # .cursor/agents/comms-analyst.md — orbXi premature-close cautionary tale
+    ("This rule exists because of a real-world premature-close incident: a generic outbound check-in matched against a `#track` item that required explicit confirmation from the merchant contact — which had never actually been given.",
+     "This rule exists because of a real-world premature-close incident: a generic outbound check-in matched against a `#track` item that required explicit confirmation from the merchant contact — which had never actually been given."),
+
+    # scripts/cross-merchant-audit.py — docstring incident reference
+    ("This is the diagnostic that surfaced the PRRI -> aimpoint-us contamination\n(14 misrouted entries, 1 misrouted Asana subtask) on 2026-05-13. Run it\nweekly + after every slug merge to catch regressions.",
+     "This diagnostic catches cross-merchant contamination (misrouted comms entries,\nleaked Asana subtasks). Run it weekly + after every slug merge to catch regressions."),
+    ("python3 scripts/cross-merchant-audit.py --slug <slug>  # one merchant",
+     "python3 scripts/cross-merchant-audit.py --slug <slug>  # one merchant"),
+
+    # scripts/cross-merchant-audit.py — scoring examples
+    ("(natural — contact@example.com listed as contact for example-merchant)",
+     "(natural — contact@example.com listed as contact for example-merchant)"),
+    ("(could be a leaked contact — address also appears in another merchant)",
+     "(could be a leaked contact — address also appears in another merchant)"),
+    ("(e.g. PRRI's query lists Aimpoint domains, so Aimpoint emails appear\n         to \"match\" PRRI even though they clearly belong to aimpoint-us).",
+     "(e.g. merchant-A's query lists merchant-B domains, so merchant-B emails appear\n         to \"match\" merchant-A even though they clearly belong to merchant-B)."),
 
     # .cursor/skills/recall/SKILL.md
     ('("3 candidates: [<slug-a>], [<slug-b>], [pattern-some-topic]. Which?").',
@@ -303,6 +329,7 @@ LEAK_SCAN_ALLOWLIST = {
 LEAK_SCAN_FILE_EXCLUDES = {
     "scripts/sync-template.py",   # contains the denylist constants by definition
     "data/runbooks/template-sync.md",  # documents the protocol, references author names
+    "data/runbooks/dual-write-log.md",  # operational log with real merchant entries
     "CLAUDE.md.pre-trim-notes.md",  # design history, references real merchants in past tense
 }
 

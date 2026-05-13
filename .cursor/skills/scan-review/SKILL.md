@@ -2,16 +2,16 @@
 name: scan-review
 description: >-
   Runs incremental email and Slack scans across all active merchants by fanning out
-  to /merchant-scanner subagents, then runs /comms-analyst per merchant to propose
-  auto-closures and new action items. Use when the user says "scan email",
-  "scan Slack", "check all projects", "review open items", or "what's new".
+  fetch-relay subagents, ingesting via Python script, then running /comms-analyst per
+  merchant to propose auto-closures and new action items. Use when the user says "scan
+  email", "scan Slack", "check all projects", "review open items", or "what's new".
 ---
 
 # Scan & Review Pipeline
 
-Three phases: Handover sweep (find new merchants), Scan (log comms via `/merchant-scanner`), Review (analyze via `/comms-analyst`, then dual-write to Asana + local).
+Four stages: Handover sweep, Fetch + Ingest (split into LLM fetch relay and Python ingest), Review (comms-analyst proposals), Apply (script-driven dual-write).
 
-The skill is an orchestrator. The heavy lifting (Gmail/Slack fetches, full `raw/comms.md` reads, dedup logic) lives in the subagents so the main thread stays clean.
+The key architectural principle: **the LLM never writes to project files during scanning.** All file writes are deterministic Python scripts. The LLM does two things: (1) call MCP tools to fetch raw data, (2) reason about what action items to create. Everything else is code.
 
 ## Phase 0: Handover sweep
 
@@ -26,33 +26,62 @@ merchants that need a project bootstrapped.
 2. If `proposals` is non-empty, hand them to the `handover-bootstrap` skill
    (scan mode — proposals are already structured, no re-parsing). The skill
    surfaces a one-line preview per proposal, then runs
-   `scripts/handover-create.py` against each. Each successful bootstrap
-   creates `projects/active/<slug>/`, the Asana task, runs
-   `hubble-reconcile.py --backfill`, and updates state.
+   `scripts/handover-create.py` against each.
 3. Hold the per-bootstrap results for the final summary's `New Handovers`
    section. If `proposals` is empty, this phase is a silent no-op.
 
 Important: Phase 0 runs **before** Phase 1's `ls projects/active/` so any
 projects bootstrapped here are immediately visible to the per-merchant scan.
 
-## Phase 1: Scan
+## Phase 0.5: Cross-merchant contamination check
+
+Run `python3 scripts/cross-merchant-audit.py --json` (~2s, read-only). If it
+returns suspect entries, surface them in the final triage summary under a
+`Cross-merchant Contamination` section. Do not auto-move entries.
+
+## Phase 1a: Fetch (LLM fan-out)
 
 1. List all active merchants: `ls projects/active/`.
-2. Fan out one `/merchant-scanner` invocation per merchant **in parallel** (single message with N tool calls).
-3. Each subagent returns a small JSON summary `{ slug, new_emails, new_slack_threads, new_contacts, headline, errors }`. The full message bodies stay inside the subagent — they never enter your context.
-4. Aggregate the headlines into a one-block report: `<merchant>: <headline>`. Surface any errors and any `new_contacts` for human review.
+2. For each merchant, read:
+   - `PROJECT.md` → extract `Email search` query and `Slack channels`
+   - `scan-state.json` → extract `last_email_scan` and `last_slack_scan`
+3. Apply 4-hour TTL: skip merchants whose `last_email_scan` < 4 hours old.
+4. Fan out one `/merchant-scanner` invocation per eligible merchant **in parallel** (single message with N tool calls). Pass each subagent:
+   - `slug`
+   - `email_query` (the raw query string from PROJECT.md)
+   - `slack_channels` (list of channel IDs)
+   - `email_since` (from scan-state.json)
+   - `slack_since` (from scan-state.json)
+5. Each subagent writes a staging file to `data/staging/<slug>-<YYYY-MM-DD>.json` and returns `{ slug, emails_fetched, slack_threads_fetched, errors }`.
+6. Aggregate returns — note any errors for the triage summary.
+
+The fetch subagent does NO filtering, NO dedup, NO file writes to project folders. It only calls MCP tools and dumps raw results to staging.
+
+## Phase 1b: Ingest (Python script)
+
+Run `python3 scripts/ingest-comms.py` to process all staging files at once.
+
+The script handles deterministically:
+- Dedup against `scan-state.json` (by message_id / channel_id+thread_ts)
+- Identity gate (quarantines messages that don't match the merchant's identity model)
+- Writes to `raw/comms.md` (full verbatim entry)
+- Writes to `timeline.md` (structured metadata with `_pending_` summary)
+- Contact discovery (patches PROJECT.md email query + Key Contacts)
+- Updates `scan-state.json`
+
+The script outputs JSON to stdout with per-merchant stats. Parse this to know which merchants have new content for Phase 2.
 
 ## Phase 2: Review
 
-For each merchant where `new_emails + new_slack_threads > 0` (or where the user explicitly asks to review):
+For each merchant where `new_emails + new_slack_threads > 0` in the ingest report:
 
 1. Fan out one `/comms-analyst` invocation per merchant **in parallel**.
-2. Each subagent returns proposals (read-only): `{ auto_close[], new_items[], waiting_on_merchant[], commitments[], dedupe_skipped[] }`.
-3. **Main thread executes the dual-write** (the analyst is read-only, so writes happen here):
-   - For each `auto_close` with `confidence: high`: mark `[x]` in `action-items.md` with ` — Completed: YYYY-MM-DD (sent via <alias>)` suffix; `PUT /tasks/{subtask_gid}` in Asana with `{ completed: true }`.
-   - For each `auto_close` with `confidence: medium|low`: surface for human confirmation, do not auto-apply.
-   - For each `new_items[]`: append to `action-items.md` (format `- [ ] #tag — Description — Complexity: L/M/H — Owner — Due — Source`); create Asana subtask via `POST /tasks/{parent_gid}/subtasks` with `name` set to the plain action-verb description (no `#tag` prefix), plus due_on and notes (see "Subtask notes body" below); multi-home to Action Items project + section by urgency; set Tag and Complexity custom fields (Tag derived from the local `#tag`); persist new `subtask_gid` to `asana.json`.
-   - For each `commitments[]` from the analyst: persist to `projects/active/<slug>/commitments.md` (see "Commitments persistence" below).
+2. Each subagent returns proposals: `{ auto_close[], new_items[], waiting_on_merchant[], commitments[], dedupe_skipped[], inline_gaps[], asana_comments[], timeline_summaries[] }`.
+3. **Persist each proposal to disk BEFORE any writes**, then invoke the script-driven applier:
+   - Write each analyst return to `data/scan-proposals/<slug>-<YYYY-MM-DD>.json`.
+   - Once all JSONs are on disk, run `python3 scripts/apply-proposals.py --resume`.
+   - For `commitments[]`: persist to `projects/active/<slug>/commitments.md` (see below).
+   - Surface the applier's run report in the triage summary.
 
 ### Commitments persistence
 
@@ -63,56 +92,34 @@ After Phase 2, for each merchant whose analyst returned `commitments[]`, upsert 
 ```
 
 Upsert rules:
-- Match by normalized promise text (lowercased, whitespace-collapsed). If the same promise already exists, update `Status` only.
-- Mark `Status: fulfilled` when an outbound email matches the promise (use the same fuzzy-match logic the analyst uses for `auto_close`).
+- Match by normalized promise text. If same promise exists, update `Status` only.
+- Mark `Status: fulfilled` when an outbound matches the promise.
 - Mark `Status: overdue` when `today > due_date` and Status is still `open`.
-- Mark `[x]` when `Status: fulfilled`. Leave `[ ]` for `open` and `overdue`.
+- Mark `[x]` when `Status: fulfilled`.
 
-If `commitments.md` doesn't exist, create with the header:
-
-```
-# Commitments — <Merchant>
-
-Tracks explicit promises [YOUR_NAME] made in outbound comms. Auto-maintained by the
-scan-review skill. Surfaced at startup when any are `overdue`.
-
-## Open / Overdue
-
-## Fulfilled
-```
-
-Move fulfilled items to the bottom section to keep the open list short.
+If `commitments.md` doesn't exist, create with the standard header.
 
 ### Subtask notes body
 
-Compose the `notes` field of the Asana subtask from the analyst's `notes` plus any `suggested_resources`. Format:
+Compose the `notes` field from the analyst's `notes` + `suggested_resources`:
 
 ```
 <analyst notes — 1-2 sentence context>
 
 Suggested Resources:
-- Email — "Re: proration on plan change" — https://mail.google.com/mail/u/0/#inbox/abc123
-- Slack — #proj-example-merchant thread 2026-04-23 — https://stripe.slack.com/archives/C0XXXX/p1714000000000000
-- Docs (verify) — Billing — Upgrade/downgrade proration — https://docs.stripe.com/billing/subscriptions/upgrade-downgrade
+- Email — "Re: proration" — https://mail.google.com/...
+- Docs (verify) — Billing — Upgrade/downgrade proration — https://docs.stripe.com/...
 ```
 
 Render rules:
-- Skip the entire "Suggested Resources:" section if `suggested_resources` is empty or absent.
-- Kind label maps to: `email` → `Email`, `slack` → `Slack`, `doc` → `Docs`, `ref` → `Ref`.
-- For `kind: "doc"` items with `verify: true`, append ` (verify)` to the kind label (e.g. `Docs (verify)`).
-- For items with `url: null` (the `ref` fallback when no permalink exists), drop the trailing `— <url>` and render as plain text after the label (e.g. `- Ref — comms.md 2026-04-23 — re: proration`).
-- Local `action-items.md` is unchanged — resources live only in the Asana subtask body.
+- Skip "Suggested Resources:" section if empty.
+- Kind maps: `email` → `Email`, `slack` → `Slack`, `doc` → `Docs`, `ref` → `Ref`.
+- `verify: true` → append ` (verify)` to kind label.
+- `url: null` → drop trailing URL, render as plain text.
 
 ## Phase 3: Triage Summary
 
-Before rendering, run the **stale-draft sweep** (script-driven, ~1s):
-
-```
-python3 scripts/stale-drafts.py --threshold-days 7 --json
-```
-
-Parse the JSON; group by slug. Surface in the summary as a `Stale Drafts` section so
-forgotten drafts don't accumulate.
+Before rendering, run `python3 scripts/stale-drafts.py --threshold-days 7 --json`.
 
 Present in this format:
 
@@ -120,8 +127,10 @@ Present in this format:
 ## Scan & Review Summary — YYYY-MM-DD
 
 ### New Handovers (N bootstrapped, M skipped)
-- [Merchant] (`<slug>`) — AE @<ae>, AONR <aonr> — Asana created, Hubble <ok|skipped>
-- (or: "no new handovers")
+- [Merchant] (`<slug>`) — AE @<ae>, AONR <aonr>
+
+### Ingest Report
+- [Merchant]: N emails, M slack threads ingested, K quarantined, J contacts added
 
 ### Auto-Closed (N items)
 - [Merchant] #reply — description — matched outbound "subject" on YYYY-MM-DD
@@ -139,17 +148,20 @@ Present in this format:
 - [Merchant]: <addr> — added to Key Contacts and Email query
 
 ### Stale Drafts (>7d unsent)
-- [Merchant]: <draft-name> — Nd old — `<path>`
+- [Merchant]: <draft-name> — Nd old
+
+### Cross-merchant Contamination (if any)
+- [Merchant]: entry likely belongs to <other-slug>
 
 ### No Activity
 - [Merchant list]
 ```
 
-If the stale-drafts sweep returns empty, omit that section entirely.
-
 ## Hard rules
 
-- **Always fan out in parallel** (single tool-call message with N invocations). Never iterate sequentially.
-- **Scans never create action items.** That is exclusively Phase 2's job.
-- **Dedup happens inside subagents.** Don't re-check it in the main thread.
-- **Asana writes only happen in the main thread.** `comms-analyst` is read-only.
+- **Fan out fetch subagents in parallel** (single message with N invocations).
+- **The LLM never writes to project files during scan.** All writes go through `ingest-comms.py` or `apply-proposals.py`.
+- **Scans never create action items.** That is exclusively Phase 2's job (comms-analyst).
+- **Dedup and identity gate happen in Python** (`ingest-comms.py`), not in subagents or main thread.
+- **Asana writes happen via apply-proposals.py** — never inline in the main thread.
+- **comms-analyst is read-only.** It proposes; the script applies.

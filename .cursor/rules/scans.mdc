@@ -1,16 +1,28 @@
 ---
-description: Scan + review delegation pointer — implementation lives in subagents
+description: Scan + review pipeline architecture — points to scripts and agents
 alwaysApply: false
 ---
 
-# Scan & Review
+# Scan & Review Pipeline
 
-Scan and review work runs through subagents and the `scan-review` skill. Do not duplicate the protocol here.
+Two-layer architecture: deterministic Python scripts handle all file writes; LLM handles fetch relay and reasoning only.
 
-- **Per-merchant Gmail/Slack fetch + dedup + log**: `/merchant-scanner` (`.cursor/agents/merchant-scanner.md`)
-- **Per-merchant comms analysis + auto-close + new-item proposals**: `/comms-analyst` (`.cursor/agents/comms-analyst.md`)
-- **End-to-end orchestration**: `.cursor/skills/scan-review/SKILL.md`
+## Pipeline stages
 
-The orchestrator-layer rules (log everything, dedup before creating, dual-write Asana + local) live in `.cursor/rules/research-protocol.mdc` under "Scan Protocol".
+1. **Fetch** (LLM): `/merchant-scanner` subagent calls Gmail/Slack MCP, dumps to `data/staging/<slug>-<date>.json`
+2. **Ingest** (Python): `scripts/ingest-comms.py` — dedup, identity gate, writes to comms.md + timeline.md
+3. **Reason** (LLM): `/comms-analyst` proposes action items, auto-closes, comments, timeline summaries
+4. **Apply** (Python): `scripts/apply-proposals.py` — Asana writes, local action-items.md updates
 
-If you find yourself describing the Incremental Query Protocol, message_id dedup, outbound detection, or batch sizing here, that detail belongs inside `merchant-scanner.md` instead — keep it there.
+## Key files
+
+- Fetch subagent: `.cursor/agents/merchant-scanner.md`
+- Ingest script: `scripts/ingest-comms.py`
+- Analyst subagent: `.cursor/agents/comms-analyst.md`
+- Apply script: `scripts/apply-proposals.py`
+- Orchestrator: `.cursor/skills/scan-review/SKILL.md`
+- Shared library: `scripts/lib/__init__.py`
+
+## Hard rule
+
+The LLM never writes to `raw/comms.md`, `timeline.md`, `scan-state.json`, or `action-items.md` during a scan. Those writes are owned by Python scripts.
