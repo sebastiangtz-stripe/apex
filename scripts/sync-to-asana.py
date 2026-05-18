@@ -411,8 +411,10 @@ def sync_project(slug, resync=False):
 
     if asana_json.exists() and not resync:
         mapping = json.loads(asana_json.read_text())
-        print(f"  [{slug}] Already synced (task {mapping['task_gid']}), skipping")
-        return "skipped"
+        task_gid = mapping.get("task_gid", "")
+        if task_gid and task_gid != "REPLACE" and str(task_gid).isdigit():
+            print(f"  [{slug}] Already synced (task {task_gid}), skipping")
+            return "skipped"
 
     project_md = project_dir / "PROJECT.md"
     if not project_md.exists():
