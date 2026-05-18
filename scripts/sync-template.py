@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Sync this live workspace's template-relevant files to the local template
-mirror at ~/Documents/SGG-Assistant-Template/, optionally committing and
+mirror at ~/Documents/accelerate-apex-template/, optionally committing and
 pushing to GitHub apex (sebastiangtz-stripe/apex).
 
 This script is the only sanctioned way to publish improvements from a live
@@ -36,7 +36,7 @@ from pathlib import Path
 # ── Paths ────────────────────────────────────────────────────────────────────
 
 LIVE_ROOT = Path(__file__).resolve().parent.parent
-TEMPLATE_ROOT = Path.home() / "Documents" / "SGG-Assistant-Template"
+TEMPLATE_ROOT = Path.home() / "Documents" / "accelerate-apex-template"
 SYNC_LOG = LIVE_ROOT / "data" / "runbooks" / "template-sync-log.md"
 
 # ── What's template-relevant ─────────────────────────────────────────────────
@@ -319,9 +319,8 @@ LEAK_SCAN_ALLOWLIST = {
     "sebastiangtz-stripe/apex",
     "github.com/sebastiangtz-stripe",
     # Local template directory path — both authors use the same path per the
-    # runbook. The "SGG" substring inside the directory name is intentional
-    # (the directory predates the apex repo).
-    "SGG-Assistant-Template",
+    # runbook.
+    "accelerate-apex-template",
 }
 
 # Files where the leak scanner's own denylist tokens may appear by design.
@@ -644,12 +643,12 @@ def mode_report():
     print(result.stdout or "(no commits in last 7 days)")
     print()
     print("# Files unchanged in last 30 days (potential staleness)")
-    print("(run `git -C ~/Documents/SGG-Assistant-Template/ log --diff-filter=AM --name-only --since=30.days | sort -u` for inverse)")
+    print("(run `git -C ~/Documents/accelerate-apex-template/ log --diff-filter=AM --name-only --since=30.days | sort -u` for inverse)")
 
 def mode_pull_review():
     """Pull apex + show diff vs live workspace, file-by-file."""
     print("--pull --review not yet implemented. Workflow:\n"
-          "  1. git -C ~/Documents/SGG-Assistant-Template/ pull --rebase\n"
+          "  1. git -C ~/Documents/accelerate-apex-template/ pull --rebase\n"
           "  2. Manually diff against your live workspace and copy desired changes.\n"
           "Reverse-sync from template → live is intentionally manual to avoid clobbering merchant data.")
     sys.exit(0)

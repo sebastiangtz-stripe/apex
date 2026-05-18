@@ -17,7 +17,7 @@ live workspaces.
               │ (sanitize + push)                              │ (sanitize + push)
               ▼                                                 ▼
        ┌─────────────────────────────────────────────────────────────┐
-       │  ~/Documents/SGG-Assistant-Template/                         │
+       │  ~/Documents/accelerate-apex-template/                         │
        │  (no merchant data, fully sanitized)                         │
        │                                                              │
        │  origin = github.com/sebastiangtz-stripe/apex (private)      │
@@ -33,7 +33,7 @@ live workspaces.
 |---|---|
 | **[YOUR_NAME]'s live workspace** (this) | Primary author of agent / skill / rule / script changes. Runs `scripts/sync-template.py --push` after substantive improvements. |
 | **Diego's live workspace** | Second author. Same sync responsibility on his side. Diego's workspace lives on his machine — never on this filesystem. |
-| **`~/Documents/SGG-Assistant-Template/`** | Local sanitized mirror, single source of truth for what goes to GitHub. Always behind the latest live changes until a sync runs. |
+| **`~/Documents/accelerate-apex-template/`** | Local sanitized mirror, single source of truth for what goes to GitHub. Always behind the latest live changes until a sync runs. |
 | **`apex` (GitHub)** | Canonical shared template. Both authors pull here, both push here. PR review encouraged once both authors are active. |
 
 ## What is template-relevant (gets synced)
@@ -106,7 +106,7 @@ python3 scripts/sync-template.py --push --message "<one-line summary of changes>
 
 The script does, in order:
 
-1. Verifies `~/Documents/SGG-Assistant-Template/` exists and is on `main` with no uncommitted changes.
+1. Verifies `~/Documents/accelerate-apex-template/` exists and is on `main` with no uncommitted changes.
 2. Rsyncs template-relevant paths from the live workspace to the template directory (with the exclusions above).
 3. Applies all `GENERICIZATION_RULES` to every changed file.
 4. Runs the leak scan. **Fails hard** if any token from the deny list is found.
@@ -115,7 +115,7 @@ The script does, in order:
 7. Pushes to `origin/main` (apex).
 
 If any step fails, the script aborts before any push. The local template
-working tree may have partial changes — `git -C ~/Documents/SGG-Assistant-Template/ reset --hard origin/main` to clean up.
+working tree may have partial changes — `git -C ~/Documents/accelerate-apex-template/ reset --hard origin/main` to clean up.
 
 ### Dry run (review before pushing)
 
@@ -134,7 +134,7 @@ python3 scripts/sync-template.py
 
 Sanitizes and commits to the local template repo without pushing. Useful when
 you want to review the diff in the template directory before publishing. Push
-later with `git -C ~/Documents/SGG-Assistant-Template/ push`.
+later with `git -C ~/Documents/accelerate-apex-template/ push`.
 
 ### When the script can't be used
 
@@ -152,19 +152,19 @@ This forces every sync path through the same lint/leak gates.
 
 Two-author repos drift quickly. Rules:
 
-1. **Pull before sync.** Always `git -C ~/Documents/SGG-Assistant-Template/ pull --rebase` before running the sync. The script does this automatically when invoked with `--push`.
+1. **Pull before sync.** Always `git -C ~/Documents/accelerate-apex-template/ pull --rebase` before running the sync. The script does this automatically when invoked with `--push`.
 2. **Single source of truth per file.** A given skill / agent / runbook is owned by whoever last touched it; the other author should branch off `main` and open a PR rather than pushing directly.
 3. **Open a PR for non-trivial changes.** Once both authors are actively pushing (>1 commit per author per week), switch from direct-to-main pushes to feature branches + PRs. Use `gh pr create` from the template directory.
-4. **Resolve in the template, not in the live workspace.** Rebase / merge happen in `~/Documents/SGG-Assistant-Template/`. Once `main` is clean, both authors pull into their own live workspaces manually (each author decides what to incorporate where; live workspaces never auto-update from `main`).
+4. **Resolve in the template, not in the live workspace.** Rebase / merge happen in `~/Documents/accelerate-apex-template/`. Once `main` is clean, both authors pull into their own live workspaces manually (each author decides what to incorporate where; live workspaces never auto-update from `main`).
 5. **Lessons stay local.** Even when a `pattern-*.md` lesson is shared, only the abstracted pattern ships — never the merchant-specific lesson file.
 
 ## Pulling from apex into a live workspace
 
-Both authors keep a clone of `apex` at `~/Documents/SGG-Assistant-Template/`. To
+Both authors keep a clone of `apex` at `~/Documents/accelerate-apex-template/`. To
 pick up the peer's improvements:
 
 ```bash
-git -C ~/Documents/SGG-Assistant-Template/ pull --rebase
+git -C ~/Documents/accelerate-apex-template/ pull --rebase
 ```
 
 Then, in the live workspace, copy the changed template-relevant files in
@@ -177,7 +177,7 @@ A semi-automated helper is available:
 python3 scripts/sync-template.py --pull --review
 ```
 
-This shows a unified diff between `~/Documents/SGG-Assistant-Template/`
+This shows a unified diff between `~/Documents/accelerate-apex-template/`
 (after pulling) and the live workspace, file by file, and lets the user
 accept / skip each change. It never modifies merchant data paths.
 
@@ -185,7 +185,7 @@ accept / skip each change. It never modifies merchant data paths.
 
 When Diego sets up his own live workspace from `apex`:
 
-1. Clone `apex` → his own `~/Documents/SGG-Assistant-Template/` (his canonical mirror).
+1. Clone `apex` → his own `~/Documents/accelerate-apex-template/` (his canonical mirror).
 2. Copy that into a new live workspace at his preferred path (e.g. `~/Documents/Diego-Accelerate/`).
 3. Replace `[YOUR_NAME]` / `[YOUR_INITIALS]` / `[YOUR_TIMEZONE]` / `[YOUR_BOARD_NAME]` placeholders with his own values in `CLAUDE.md` and templates.
 4. Set up `.env` per `SETUP.md`.
@@ -200,7 +200,7 @@ When Diego sets up his own live workspace from `apex`:
 |---|---|---|
 | `LEAK SCAN FAILED` with a merchant slug | A new merchant or alias appeared that's not in the deny list | Add the slug to `MERCHANT_DENYLIST` in `scripts/sync-template.py` and re-run |
 | `LEAK SCAN FAILED` with `[YOUR_NAME]` | A new file path or context introduced an un-genericized identity reference | Add a substitution rule to `GENERICIZATION_RULES` |
-| `test-subagents.py` fails after sync | Genericization broke a required marker (e.g. `## Hard rules`) in a skill | Inspect the diff in `~/Documents/SGG-Assistant-Template/`, revise the rule to be more specific |
+| `test-subagents.py` fails after sync | Genericization broke a required marker (e.g. `## Hard rules`) in a skill | Inspect the diff in `~/Documents/accelerate-apex-template/`, revise the rule to be more specific |
 | Push rejected (non-fast-forward) | Diego pushed since you last pulled | The script auto-rebases on `--push`. If running manually, `git pull --rebase` first |
 | 403 on push | PAT expired or scope reduced | Regenerate at github.com/settings/personal-access-tokens with `Contents: Read and write` on `apex` |
 

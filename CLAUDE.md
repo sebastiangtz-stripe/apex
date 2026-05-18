@@ -4,7 +4,7 @@ Conversational PM system for [YOUR_NAME], a Stripe Accelerate consultant managin
 
 **Architecture**: Asana is the project and task management layer (board: "[YOUR_BOARD_NAME]"). Local markdown stores raw communications, timelines, issues, drafts, and session logs. Cursor agents are the primary interface — no custom dashboard.
 
-**Shared with Diego via apex**: This workspace is the upstream of a peer-shared agent template at `~/Documents/SGG-Assistant-Template/`, mirrored to GitHub at [`sebastiangtz-stripe/apex`](https://github.com/sebastiangtz-stripe/apex). [YOUR_NAME] and Diego both run their own live workspaces with their own merchant data, both publish improvements (skills, agents, scripts, runbooks, CLAUDE.md changes) to apex via `python3 scripts/sync-template.py --push`, and both pull updates from apex into their own workspaces. Full protocol + roles + conflict rules in [`data/runbooks/template-sync.md`](data/runbooks/template-sync.md). **Never** push merchant data, sessions, or `.env` to apex — the sync script enforces this with a leak scan that fails hard on any merchant token.
+**Shared with Diego via apex**: This workspace is the upstream of a peer-shared agent template at `~/Documents/accelerate-apex-template/`, mirrored to GitHub at [`sebastiangtz-stripe/apex`](https://github.com/sebastiangtz-stripe/apex). [YOUR_NAME] and Diego both run their own live workspaces with their own merchant data, both publish improvements (skills, agents, scripts, runbooks, CLAUDE.md changes) to apex via `python3 scripts/sync-template.py --push`, and both pull updates from apex into their own workspaces. Full protocol + roles + conflict rules in [`data/runbooks/template-sync.md`](data/runbooks/template-sync.md). **Never** push merchant data, sessions, or `.env` to apex — the sync script enforces this with a leak scan that fails hard on any merchant token.
 
 ---
 
@@ -214,7 +214,7 @@ Full endpoint reference + JSON parsing gotcha: [`data/runbooks/asana-api.md`](da
 ## Template Sync Protocol (apex)
 
 This live workspace is the upstream of a peer-shareable agent template at
-`~/Documents/SGG-Assistant-Template/`, mirrored to GitHub at
+`~/Documents/accelerate-apex-template/`, mirrored to GitHub at
 [`sebastiangtz-stripe/apex`](https://github.com/sebastiangtz-stripe/apex).
 [YOUR_NAME] and Diego both maintain their own live workspaces (each with their
 own merchant data) and both publish improvements through apex.
@@ -237,7 +237,7 @@ GID appears in template content. Bypass is not supported.
 | "what changed since last sync" / "template drift" | Run `python3 scripts/sync-template.py --check`. List the drifted paths. |
 | "preview template sync" / "dry run" | Run `python3 scripts/sync-template.py --dry-run`. Show the proposed diff + genericization. |
 | "weekly sync report" | Run `python3 scripts/sync-template.py --report`. Surface recent apex commits + staleness. |
-| "pull from apex" | Run `git -C ~/Documents/SGG-Assistant-Template/ pull --rebase`. Then offer to manually walk diffs into the live workspace (no auto-apply — merchant data must be preserved). |
+| "pull from apex" | Run `git -C ~/Documents/accelerate-apex-template/ pull --rebase`. Then offer to manually walk diffs into the live workspace (no auto-apply — merchant data must be preserved). |
 
 ### When to suggest a sync proactively
 
@@ -261,7 +261,7 @@ Batching reduces noise in apex history.
 The script auto-rebases against `origin/main` before pushing, so peer
 commits from Diego land cleanly. If the rebase fails (true conflict on a
 shared file), the script aborts with the conflicted paths printed — resolve
-manually in `~/Documents/SGG-Assistant-Template/` and re-run.
+manually in `~/Documents/accelerate-apex-template/` and re-run.
 
 Once both authors are committing >1×/week, switch from direct-to-main
 pushes to feature-branch + PR review. The runbook covers the migration.
