@@ -213,6 +213,7 @@ def write_hubble_json(slug_dir: Path, row: dict, fetched_at: str, dry_run: bool)
         "account_segment": row.get("account_segment"),
         "accelerate_type": row.get("accelerate_type"),
         "project_geography": row.get("project_geography"),
+        "stripe_account_ids": row.get("stripe_account_ids"),
         "last_synced": fetched_at,
     }
     if hj.exists():
@@ -293,6 +294,20 @@ def upsert_external_link(text: str, label: str, url: str) -> str:
     return "\n".join(lines) + ("\n" if text.endswith("\n") else "")
 
 
+def parse_stripe_account_ids(raw) -> str:
+    """Parse stripe_account_ids (JSON array string or list) into a comma-separated string."""
+    if not raw:
+        return ""
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except (json.JSONDecodeError, ValueError):
+            return raw.strip()
+    if isinstance(raw, list):
+        return ", ".join(str(v) for v in raw if v)
+    return str(raw).strip()
+
+
 def format_aonr(value) -> str:
     if value is None:
         return ""
@@ -341,6 +356,11 @@ def apply_backfill(slug_dir: Path, row: dict, fetched_at: str, dry_run: bool) ->
         text = field_set_or_insert(text, "Started", row["kantata_start_date"])
     if row.get("kantata_end_date"):
         text = field_set_or_insert(text, "Due", row["kantata_end_date"])
+    acct_ids_str = parse_stripe_account_ids(row.get("stripe_account_ids"))
+    if acct_ids_str:
+        existing_ids = parse_project_md(pm).get("account_ids", "")
+        if not existing_ids or existing_ids == "TBD":
+            text = field_set_or_insert(text, "Account ID(s)", acct_ids_str)
 
     if text != original:
         changes.append("PROJECT.md")
@@ -379,6 +399,11 @@ def compute_drift(slug_dir: Path, row: dict) -> list[tuple[str, str, str]]:
 
     if row.get("kantata_end_date") and md.get("due") != row["kantata_end_date"]:
         diffs.append(("Due", md.get("due", ""), row["kantata_end_date"]))
+
+    hubble_acct = parse_stripe_account_ids(row.get("stripe_account_ids"))
+    local_acct = md.get("account_ids", "")
+    if hubble_acct and local_acct not in ("TBD", "", hubble_acct):
+        diffs.append(("Account ID(s)", local_acct, hubble_acct))
 
     return diffs
 
