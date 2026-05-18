@@ -463,10 +463,10 @@ def sync_project(slug, resync=False):
         "custom_fields": custom_fields,
     }
 
-    if is_date(info["started"]):
-        task_data["start_on"] = info["started"]
     if is_date(info["due"]):
         task_data["due_on"] = info["due"]
+        if is_date(info["started"]):
+            task_data["start_on"] = info["started"]
 
     print(f"  [{slug}] Creating '{info['name']}' in {status}...", end=" ")
 

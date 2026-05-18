@@ -44,6 +44,13 @@ ACCELERATE_HEADER_RE = re.compile(
     r"Accelerate\s*:\s*([^:\n]+?)(?:\s*:\s*([^\n]+?))?\s*(?:\n|$)",
     re.IGNORECASE,
 )
+# Account Manifest Bot format: "introducing Easy Pay Direct - [Connect]"
+INTRODUCING_RE = re.compile(
+    r"introducing\s+(.+?)\s*-\s*\[([^\]]+)\]",
+    re.IGNORECASE,
+)
+# "From @handle:" prefix in Account Manifest Bot messages
+FROM_HANDLE_RE = re.compile(r"From\s+@(\w+)\s*:", re.IGNORECASE)
 MANIFEST_URL_RE = re.compile(
     r"https?://admin\.corp\.stripe\.com/account-manifest/(accma_\w+)\S*"
 )
@@ -98,6 +105,11 @@ def extract_fields(text: str) -> dict:
         out["merchant_name"] = m.group(1).strip()
         if m.group(2):
             out["products_hint"] = m.group(2).strip()
+    else:
+        m2 = INTRODUCING_RE.search(text)
+        if m2:
+            out["merchant_name"] = m2.group(1).strip()
+            out["products_hint"] = m2.group(2).strip()
 
     m = MANIFEST_URL_RE.search(text)
     if m:
@@ -141,8 +153,15 @@ def extract_fields(text: str) -> dict:
 
 
 def extract_ae_handle(messages: list[dict], handle: str | None = None) -> str | None:
-    """Find the user who posted the handover phrase. Falls back to first non-bot
-    sender that isn't the recipient."""
+    """Find the user who posted the handover phrase. Also checks for
+    'From @handle:' prefix in Account Manifest Bot messages. Falls back to
+    first non-bot sender that isn't the recipient."""
+    # Check for "From @handle:" in bot messages first (Account Manifest Bot format)
+    for msg in messages:
+        text = msg.get("text", "") or ""
+        m = FROM_HANDLE_RE.search(text)
+        if m:
+            return m.group(1).strip()
     for msg in messages:
         text = msg.get("text", "") or ""
         if HANDOVER_PHRASE_RE.search(text):
