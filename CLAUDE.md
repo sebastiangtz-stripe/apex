@@ -17,9 +17,33 @@ Specialized Cursor subagents live in `.cursor/agents/`. Each has its own context
 | `merchant-scanner` | Lightweight fetch relay — calls Gmail/Slack MCP, dumps raw results to `data/staging/`. No dedup, no writes to project files. | claude-4.6-sonnet |
 | `comms-analyst` | Read-only review of one merchant's full `raw/comms.md` to propose auto-closures, new action items, Asana comments, and timeline summaries. | claude-4.6-sonnet |
 | `hubble-analyst` | Refresh `data/hubble-snapshot.json` if stale, run `scripts/hubble-reconcile.py`, return structured diff. Used by Auto-Startup Agent E. | fast |
-| `stripe-jarvis` | Any Stripe technical question (Tier 1/2/3 owned by Jarvis itself). Self-contained: searches internal docs, Trailhead, Sourcegraph, Jira, Slack, public docs. | claude-opus-4-7 (Max Mode) |
+| `handover-scanner` | Scan Slack handover channel(s) for new merchant threads, parse via `scripts/handover-parse.py`, return proposals. Used by scan-review Phase 0. | claude-4.6-sonnet |
+| `quick-context` | Per-merchant health snapshot: status, products, AONR, engagement (days silent), action items, recent activity. Returns structured JSON. | fast |
+| `stripe-jarvis` | Any Stripe technical question (Tier 1/2/3 owned by Jarvis itself). Self-contained: searches internal docs, Trailhead, Sourcegraph, Jira, Slack, public docs. | claude-opus-4-7 |
 
 **Skills vs. subagents**: Skills (`.cursor/skills/*`) orchestrate sequential PM workflows. Subagents (`.cursor/agents/*`) do heavy reading/research in isolated contexts. Skills delegate to subagents, never the other way around.
+
+### Skill Inventory
+
+| Skill | Use for | Frequency |
+|-------|---------|-----------|
+| `scan-review` | Full email/Slack scan pipeline (fetch → ingest → review → apply) | Daily |
+| `handover-bootstrap` | Bootstrap new project from Slack handover thread or paste | On new merchant |
+| `email-agent` | Draft and send merchant-facing emails with context | Daily |
+| `meeting-prep` | Pre-meeting briefing doc + verbal summary | Before calls |
+| `action-items` | Portfolio-level action item rollup with filters (tag, due, overdue) | Daily |
+| `catchup` | Sequences asana-reconcile → hubble → scan-review → index-reconciler | Mid-day re-sync |
+| `log-comms` | Manually log pasted email/Slack/meeting to raw/comms.md + timeline.md | Daily |
+| `health` | One-screen merchant dashboard (silence, items, AONR, drift, commitments) | Ad-hoc |
+| `drift-audit` | Workspace consistency audit (INDEX rot, slug collisions, hygiene) | Weekly |
+| `specialist-prompt` | Generate structured investigation prompt from canonical template | Complex research |
+| `contact-gap-audit` | Scan comms for addresses missing from PROJECT.md email query | Monthly |
+| `index-reconciler` | Rebuild INDEX.md from filesystem + PROJECT.md + Hubble | After project changes |
+| `weekly-metrics` | Aggregate session Stats into trend rollup | Weekly review |
+| `lessons-extract` | Capture institutional knowledge at project archive time | On archive |
+| `recall` | Search lessons-learned by tag/topic/product for prior patterns | Before new research |
+| `setup` | Guided first-time workspace onboarding (identity, Asana, Hubble) | One-time |
+| `test-subagents` | Validate all agent/skill/rule contracts (runs inside template sync) | Pre-push |
 
 ---
 
@@ -30,13 +54,13 @@ Specialized Cursor subagents live in `.cursor/agents/`. Each has its own context
 If `.env` looks healthy, run these in **parallel** where possible:
 
 1. Run `TZ="[YOUR_TIMEZONE]" date '+%A %Y-%m-%d %H:%M:%S %Z'` for current date/time (includes day of week). **Always use your local timezone.** Never infer the day of week — read it from the command output.
-2. **Agent A** (Asana reconcile): Run `python3 scripts/asana-reconcile.py` to sync any changes made in Asana since last session (items completed on mobile, etc.).
-3. **Agent B** (silence scan): Run `python3 scripts/last-activity.py --threshold-days 7 --json` to surface projects silent ≥7 days. Canonical helper parses both `## YYYY-MM-DD` and `## [YYYY-MM-DD]` H2 headers using `max()` (robust against out-of-order entries). Pass `--include-scan-state` if you want scanner activity to count as engagement. Never reimplement this with inline `re.findall + dates[-1]` — that silently inverts the silence direction since timelines are newest-at-top.
-4. **Agent C** (calendar): Fetch today's calendar (skip on weekends — note "Weekend mode").
-5. **Agent D** (session): Read most recent `sessions/*.md` for continuity.
-6. **Agent E** (Hubble sync): Invoke `/hubble-analyst`. It refreshes the snapshot if stale and returns a structured diff (new projects, archive candidates, drift). The verbose JSON stays inside the subagent.
+2. **Asana reconcile**: Run `python3 scripts/asana-reconcile.py` to sync any changes made in Asana since last session (items completed on mobile, etc.).
+3. **Silence scan**: Run `python3 scripts/last-activity.py --threshold-days 7 --json` to surface projects silent ≥7 days. Canonical helper parses both `## YYYY-MM-DD` and `## [YYYY-MM-DD]` H2 headers using `max()` (robust against out-of-order entries). Pass `--include-scan-state` if you want scanner activity to count as engagement. Never reimplement this with inline `re.findall + dates[-1]` — that silently inverts the silence direction since timelines are newest-at-top.
+4. **Calendar**: Fetch today's calendar (skip on weekends — note "Weekend mode").
+5. **Session continuity**: Read most recent `sessions/*.md` for continuity.
+6. **Hubble sync**: Invoke `/hubble-analyst`. It refreshes the snapshot if stale and returns a structured diff (new projects, archive candidates, drift). The verbose JSON stays inside the subagent.
 7. **Pending dual-writes check** (cheap filesystem scan, ~1s): list `data/scan-proposals/*.json` (one level deep, NOT including `applied/`). If any non-archived files exist, the prior session ended with proposals that did not finish applying. Read each file's `apply_status`; count items still in non-terminal states (anything other than `applied`, `skipped_dedup`, `skipped_low_confidence`, `skipped_human_review`). Surface in the startup summary as a top-priority line. Run `python3 scripts/apply-proposals.py --resume` to apply them — the script is idempotent (re-running on already-applied items is a no-op) and respects a `--max-age-days 7` guard for stale proposals. NEVER skip this check; it is the recovery path for the 2026-05-12-class failure mode where 44 dual-writes were silently lost.
-8. After agents complete, read `action-items.md` files for overdue/upcoming items (3 days), and read `commitments.md` files (where present) for any `Status: overdue` lines. Asana is the authority for open items; local files are the backup.
+8. After steps 2-7 complete, read `action-items.md` files for overdue/upcoming items (3 days), and read `commitments.md` files (where present) for any `Status: overdue` lines. Asana is the authority for open items; local files are the backup.
 9. Present concise summary:
  - **Pending dual-writes** (top of summary if any): "N proposals across M merchants from prior session not yet applied. Run `python3 scripts/apply-proposals.py --resume` to apply." Always surface first if non-empty — it represents work the prior session believed was committed but wasn't.
  - **Asana sync**: Changes detected by reconcile (if any)
@@ -177,7 +201,7 @@ For column mapping, saved query ID, and matching logic, see `scripts/hubble-reco
 
 ### Dual-Write Protocol
 
-Every change must update **both** Asana and local files. Asana is the management view; local is the agent context store.
+Every change must update **both** Asana and local files. Asana is the management view; local is the agent context store. During scans, these writes happen through `ingest-comms.py` (logging) and `apply-proposals.py` (action items + comments) — not inline by the LLM.
 
 | Event | Local update | Asana update |
 |-------|-------------|--------------|

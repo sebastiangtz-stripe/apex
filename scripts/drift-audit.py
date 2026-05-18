@@ -444,13 +444,16 @@ def main():
 
     if args.json:
         print(json.dumps(audit, indent=2, default=str))
-        # Determine drift count from the audit dict for exit code
         _, drift_count = render_text(audit)
-        sys.exit(1 if drift_count > 0 else 0)
     else:
         rendered, drift_count = render_text(audit)
         print(rendered)
-        sys.exit(1 if drift_count > 0 else 0)
+
+    # Record last-run timestamp for auto-startup weekly trigger
+    last_run_file = WORKSPACE_ROOT / "data" / "runbooks" / "drift-audit-last-run.txt"
+    last_run_file.write_text(datetime.now(timezone.utc).isoformat() + "\n")
+
+    sys.exit(1 if drift_count > 0 else 0)
 
 
 if __name__ == "__main__":

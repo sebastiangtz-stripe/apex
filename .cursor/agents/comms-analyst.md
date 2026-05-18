@@ -74,12 +74,12 @@ For each, propose:
   - **Cap total resources at 4** to keep subtask bodies short.
   - Resource shape: `{ "kind": "email|slack|ref|doc", "label": "<short human label>", "url": "<https url or null>", "verify": true|false (only for doc) }`.
 
-**Do NOT propose action items for work the inline scan rules already cover.** The `merchant-scanner` (Step 6) and the workspace's New Contact Discovery rule already handle these inline at log time, so by the time you read the comms there is nothing left to do:
+**Do NOT propose action items for work the pipeline already covers.** The ingest script (`ingest-comms.py`) and `apply-proposals.py` already handle these, so by the time you read the comms there is nothing left to do:
 
-- Adding new contacts to PROJECT.md Key Contacts
-- Updating the Email search query (domain / name / specific address additions)
-- Adding timeline.md or raw/comms.md entries (scanner does this)
-- Posting Asana comments on significant comms (scanner does this)
+- Adding new contacts to PROJECT.md Key Contacts (ingest-comms.py contact discovery)
+- Updating the Email search query (ingest-comms.py contact discovery)
+- Adding timeline.md or raw/comms.md entries (ingest-comms.py)
+- Posting Asana comments on significant comms (apply-proposals.py processes your `asana_comments` proposals)
 - Backfilling Slack channels or Stripe contacts when surfaced by a logged comm
 
 If you notice one of these is missing despite the scanner running (rare — usually a scanner gap), surface it under a new top-level `inline_gaps` array in the return JSON so the parent can patch it directly. Never propose it as an action item.
