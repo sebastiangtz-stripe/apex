@@ -44,16 +44,18 @@ returns suspect entries, surface them in the final triage summary under a
 1. List all active merchants: `ls projects/active/`.
 2. For each merchant, read:
    - `PROJECT.md` → extract `Email search` query and `Slack channels`
-   - `scan-state.json` → extract `last_email_scan` and `last_slack_scan`
+   - `scan-state.json` → extract `last_email_scan`, `last_slack_scan`, and `slack_thread_state`
 3. Apply 4-hour TTL: skip merchants whose `last_email_scan` < 4 hours old.
-4. Fan out one `/merchant-scanner` invocation per eligible merchant **in parallel** (single message with N tool calls). Pass each subagent:
+4. Build `active_threads` list from `slack_thread_state`: include threads where `last_message_ts` is within the last 30 days (skip ancient threads to avoid quota waste). Format: `[{ channel_id, thread_ts }]`.
+5. Fan out one `/merchant-scanner` invocation per eligible merchant **in parallel** (single message with N tool calls). Pass each subagent:
    - `slug`
    - `email_query` (the raw query string from PROJECT.md)
    - `slack_channels` (list of channel IDs)
    - `email_since` (from scan-state.json)
    - `slack_since` (from scan-state.json)
-5. Each subagent writes a staging file to `data/staging/<slug>-<YYYY-MM-DD>.json` and returns `{ slug, emails_fetched, slack_threads_fetched, errors }`.
-6. Aggregate returns — note any errors for the triage summary.
+   - `active_threads` (from step 4 — enables re-fetch of known threads for new replies)
+6. Each subagent writes a staging file to `data/staging/<slug>-<YYYY-MM-DD>.json` and returns `{ slug, emails_fetched, slack_threads_fetched, errors }`.
+7. Aggregate returns — note any errors for the triage summary.
 
 The fetch subagent does NO filtering, NO dedup, NO file writes to project folders. It only calls MCP tools and dumps raw results to staging.
 
@@ -62,7 +64,8 @@ The fetch subagent does NO filtering, NO dedup, NO file writes to project folder
 Run `python3 scripts/ingest-comms.py` to process all staging files at once.
 
 The script handles deterministically:
-- Dedup against `scan-state.json` (by message_id / channel_id+thread_ts)
+- Email dedup against `scan-state.json` (by message_id)
+- Slack dedup at message level: tracks `slack_thread_state` with `last_message_ts` per thread — only new replies are appended (not the full thread again)
 - Identity gate (quarantines messages that don't match the merchant's identity model)
 - Writes to `raw/comms.md` (full verbatim entry)
 - Writes to `timeline.md` (structured metadata with `_pending_` summary)

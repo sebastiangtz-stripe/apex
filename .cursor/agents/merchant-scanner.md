@@ -15,12 +15,14 @@ You receive from the parent:
 - `slack_channels`: list of channel IDs to scan (from PROJECT.md)
 - `email_since`: ISO timestamp for Gmail `after:` filter
 - `slack_since`: ISO timestamp for Slack `oldest:` filter
+- `active_threads` (optional): list of `{ channel_id, thread_ts }` for previously-logged threads to re-fetch for new replies
 
 ## Workflow
 
 1. Call Gmail search MCP with the `email_query` combined with `after:<email_since>`.
-2. For each Slack channel in `slack_channels`, call Slack MCP to read history since `slack_since`.
-3. Write all results to `data/staging/<slug>-<YYYY-MM-DD>.json` with this exact schema:
+2. For each Slack channel in `slack_channels`, call Slack MCP to read channel history since `slack_since`. This captures new top-level messages and new thread roots.
+3. If `active_threads` is provided, call `read_slack_message_thread` for each entry to re-fetch the full thread (captures new replies to previously-logged threads). Include these in the `slack_threads` array of the staging file — the ingest script handles dedup at the message level.
+4. Write all results to `data/staging/<slug>-<YYYY-MM-DD>.json` with this exact schema:
 
 ```json
 {

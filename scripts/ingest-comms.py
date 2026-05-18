@@ -201,6 +201,50 @@ def format_slack_entry(thread):
     return "\n".join(lines)
 
 
+def format_slack_entry_incremental(thread, new_messages):
+    """Format only new Slack thread replies as a continuation comms.md entry."""
+    if not new_messages:
+        return None
+
+    first_new = new_messages[0]
+    channel_id = thread.get("channel_id", "")
+    channel_name = thread.get("channel_name", channel_id)
+    permalink = thread.get("permalink", "")
+
+    # Date from first new message
+    try:
+        dt = datetime.fromtimestamp(float(first_new.get("ts", "0")), tz=timezone.utc)
+        date_str = dt.strftime("%Y-%m-%d")
+        date_display = dt.strftime("%Y-%m-%d %H:%M:%S UTC")
+    except (ValueError, TypeError, OSError):
+        date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        date_display = date_str
+
+    # Use original thread root for subject context
+    all_messages = thread.get("messages", [])
+    root_text = all_messages[0].get("text", "")[:80].replace("\n", " ") if all_messages else ""
+    if len(all_messages[0].get("text", "") if all_messages else "") > 80:
+        root_text += "..."
+
+    lines = [
+        f"## {date_str} — slack (continued) — {channel_name} — {root_text}",
+        f"- **Channel**: {channel_name} ({channel_id})",
+    ]
+    if permalink:
+        lines.append(f"- **Continuation of**: {permalink}")
+    lines.append(f"- **Date**: {date_display}")
+    lines.append(f"- **New replies**: {len(new_messages)}")
+    lines.append("")
+
+    for msg in new_messages:
+        user = msg.get("user", "unknown")
+        text = msg.get("text", "")
+        lines.append(f"> **{user}**: {text}")
+        lines.append(">")
+
+    return "\n".join(lines)
+
+
 def append_to_comms(slug, entry_text, dry_run=False):
     """Append an entry to raw/comms.md."""
     path = PROJECTS_DIR / slug / "raw" / "comms.md"
@@ -379,6 +423,12 @@ def ingest_staging_file(staging_path, dry_run=False):
     logged_email_ids = set(state.get("logged_email_ids", []))
     logged_slack_ids = set(state.get("logged_slack_thread_ids", []))
 
+    # Message-level Slack tracking (backward-compat: migrate from flat list)
+    slack_thread_state = state.get("slack_thread_state", {})
+    if not slack_thread_state and logged_slack_ids:
+        slack_thread_state = {k: {"last_message_ts": "0", "messages_logged": 0}
+                             for k in logged_slack_ids}
+
     all_new_addresses = set()
 
     # ── Process emails ─────────────────────────────────────────────────
@@ -451,53 +501,53 @@ def ingest_staging_file(staging_path, dry_run=False):
             continue
 
         thread_key = f"{channel_id}/{thread_ts}"
-
-        # Dedup
-        if thread_key in logged_slack_ids:
+        messages = thread.get("messages", [])
+        if not messages:
             continue
 
-        # Identity gate for Slack is looser: if the channel is listed in
-        # PROJECT.md Communication section, it's always allowed.
-        # For DMs/search results, check participant handles.
-        messages = thread.get("messages", [])
-        slack_users = {msg.get("user", "") for msg in messages if msg.get("user")}
+        # Message-level dedup: check for new replies in known threads
+        thread_meta = slack_thread_state.get(thread_key)
+        if thread_meta:
+            last_ts = float(thread_meta.get("last_message_ts", "0"))
+            new_messages = [m for m in messages if float(m.get("ts", "0")) > last_ts]
+            if not new_messages:
+                continue
+            entry = format_slack_entry_incremental(thread, new_messages)
+            is_continuation = True
+        else:
+            new_messages = messages
+            entry = format_slack_entry(thread)
+            is_continuation = False
 
-        # For now, allow all Slack threads that came through (the fetch
-        # subagent already used the merchant's configured channels).
-        # Cross-merchant contamination for Slack is rare since channels are
-        # merchant-specific. The cross-merchant-audit.py handles edge cases.
-
-        # Format and write
-        entry = format_slack_entry(thread)
         if entry is None:
             continue
 
         append_to_comms(slug, entry, dry_run)
 
         # Timeline entry
-        first_msg = messages[0] if messages else {}
+        ref_msg = new_messages[0]
         try:
-            dt = datetime.fromtimestamp(float(first_msg.get("ts", "0")), tz=timezone.utc)
+            dt = datetime.fromtimestamp(float(ref_msg.get("ts", "0")), tz=timezone.utc)
             date_str = dt.strftime("%Y-%m-%d")
         except (ValueError, TypeError, OSError):
             date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-        first_user = first_msg.get("user", "unknown")
-        # Determine direction for Slack
+        slack_users = {msg.get("user", "") for msg in new_messages if msg.get("user")}
+        first_user = ref_msg.get("user", "unknown")
         outbound = first_user.lower() in {a.split("@")[0] for a in OUTBOUND_ADDRESSES}
-        # Also check if the user matches the SLACK_HANDLE from .env
         slack_handle = ENV.get("SLACK_HANDLE", "").lower()
         if slack_handle and first_user.lower() == slack_handle:
             outbound = True
         direction = "Outbound" if outbound else "Inbound"
 
         channel_name = thread.get("channel_name", channel_id)
-        subject_hint = first_msg.get("text", "")[:60].replace("\n", " ")
+        subject_hint = ref_msg.get("text", "")[:60].replace("\n", " ")
         permalink = thread.get("permalink", "")
+        comm_type = "slack (continued)" if is_continuation else "slack"
 
         timeline = format_timeline_entry(
             date_str=date_str,
-            comm_type="slack",
+            comm_type=comm_type,
             subject=f"{channel_name} — {subject_hint}",
             direction=direction,
             from_field=first_user,
@@ -508,6 +558,13 @@ def ingest_staging_file(staging_path, dry_run=False):
         )
         prepend_to_timeline(slug, timeline, dry_run)
 
+        # Update thread state
+        max_ts = max((m.get("ts", "0") for m in messages), key=float)
+        prev_count = thread_meta["messages_logged"] if thread_meta else 0
+        slack_thread_state[thread_key] = {
+            "last_message_ts": max_ts,
+            "messages_logged": prev_count + len(new_messages),
+        }
         logged_slack_ids.add(thread_key)
         result["new_slack_threads"] += 1
 
@@ -519,6 +576,7 @@ def ingest_staging_file(staging_path, dry_run=False):
     # ── Update scan-state ──────────────────────────────────────────────
     state["logged_email_ids"] = sorted(logged_email_ids)
     state["logged_slack_thread_ids"] = sorted(logged_slack_ids)
+    state["slack_thread_state"] = slack_thread_state
     now = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
     if data.get("emails") is not None:
         state["last_email_scan"] = now
