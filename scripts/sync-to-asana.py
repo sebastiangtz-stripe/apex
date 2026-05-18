@@ -60,62 +60,72 @@ AI_COMPLEXITY = {
 
 # Sections
 SECTION_MAP = {
-    "Discovery":   ENV.get("ASANA_SECTION_RECEIVED", "REPLACE"),
-    "Integration": ENV.get("ASANA_SECTION_GREEN", "REPLACE"),
-    "Testing":     ENV.get("ASANA_SECTION_GREEN", "REPLACE"),
-    "Go-Live":     ENV.get("ASANA_SECTION_GREEN", "REPLACE"),
-    "Live":        ENV.get("ASANA_SECTION_COMPLETED", "REPLACE"),
-    "On Hold":     ENV.get("ASANA_SECTION_YELLOW", "REPLACE"),
+    "Discovery":   ENV.get("ASANA_SECTION_RECEIVED", ""),
+    "Integration": ENV.get("ASANA_SECTION_GREEN", ""),
+    "Testing":     ENV.get("ASANA_SECTION_GREEN", ""),
+    "Go-Live":     ENV.get("ASANA_SECTION_GREEN", ""),
+    "Live":        ENV.get("ASANA_SECTION_COMPLETED", ""),
+    "On Hold":     ENV.get("ASANA_SECTION_YELLOW", ""),
 }
-DEFAULT_SECTION = "REPLACE"  # [GREEN]
+DEFAULT_SECTION = ENV.get("ASANA_SECTION_GREEN", "REPLACE")
 
-# Custom field GIDs
+# Custom field GIDs (all read from .env, populated by setup-discover-asana.py)
 CF = {
-    "onr":                  "REPLACE",
-    "products":             "REPLACE",
-    "account_exec":         "REPLACE",
-    "status":               "REPLACE",
-    "acct_id":              "REPLACE",
-    "active_on_accelerate": "REPLACE",
-    "is_platform":          "REPLACE",
-    "activation_quarter":   "REPLACE",
-    "gld":                  "REPLACE",
+    "onr":                  ENV.get("ASANA_FIELD_ONR", ""),
+    "products":             ENV.get("ASANA_FIELD_PRODUCTS", ""),
+    "account_exec":         ENV.get("ASANA_FIELD_ACCOUNT_EXEC", ""),
+    "status":               ENV.get("ASANA_FIELD_STATUS", ""),
+    "acct_id":              ENV.get("ASANA_FIELD_ACCT_ID", ""),
+    "active_on_accelerate": ENV.get("ASANA_FIELD_ACTIVE", ""),
+    "is_platform":          ENV.get("ASANA_FIELD_IS_PLATFORM", ""),
+    "activation_quarter":   ENV.get("ASANA_FIELD_ACTIVATION_QUARTER", ""),
+    "gld":                  ENV.get("ASANA_FIELD_GLD", ""),
 }
 
 # Enum option GIDs
 PRODUCT_OPTIONS = {
-    "payments":  "REPLACE",
-    "billing":   "REPLACE",
-    "radar":     "REPLACE",
-    "terminal":  "REPLACE",
-    "connect":   "REPLACE",
-    "invoicing": "REPLACE",
-    "tax":       "REPLACE",
-    "sigma":     "REPLACE",
-    "identity":  "REPLACE",
+    "payments":  ENV.get("ASANA_FIELD_PRODUCT_PAYMENTS", ""),
+    "billing":   ENV.get("ASANA_FIELD_PRODUCT_BILLING", ""),
+    "radar":     ENV.get("ASANA_FIELD_PRODUCT_RADAR", ""),
+    "terminal":  ENV.get("ASANA_FIELD_PRODUCT_TERMINAL", ""),
+    "connect":   ENV.get("ASANA_FIELD_PRODUCT_CONNECT", ""),
+    "invoicing": ENV.get("ASANA_FIELD_PRODUCT_INVOICING", ""),
+    "tax":       ENV.get("ASANA_FIELD_PRODUCT_TAX", ""),
+    "sigma":     ENV.get("ASANA_FIELD_PRODUCT_SIGMA", ""),
+    "identity":  ENV.get("ASANA_FIELD_PRODUCT_IDENTITY", ""),
 }
 STATUS_OPTIONS = {
-    "green":      "REPLACE",
-    "yellow":     "REPLACE",
-    "red":        "REPLACE",
-    "live":       "REPLACE",
-    "terminated": "REPLACE",
-    "completed":  "REPLACE",
+    "green":      ENV.get("ASANA_FIELD_STATUS_GREEN", ""),
+    "yellow":     ENV.get("ASANA_FIELD_STATUS_YELLOW", ""),
+    "red":        ENV.get("ASANA_FIELD_STATUS_RED", ""),
+    "live":       ENV.get("ASANA_FIELD_STATUS_LIVE", ""),
+    "terminated": ENV.get("ASANA_FIELD_STATUS_TERMINATED", ""),
+    "completed":  ENV.get("ASANA_FIELD_STATUS_COMPLETED", ""),
 }
-PLATFORM_OPTIONS = {"yes": "REPLACE", "no": "REPLACE"}
-ACTIVE_OPTIONS = {"yes": "REPLACE", "no": "REPLACE"}
-QUARTER_OPTIONS = {"Q2": "REPLACE", "Q3": "REPLACE", "Q4": "REPLACE"}
+PLATFORM_OPTIONS = {
+    "yes": ENV.get("ASANA_FIELD_PLATFORM_YES", ""),
+    "no":  ENV.get("ASANA_FIELD_PLATFORM_NO", ""),
+}
+ACTIVE_OPTIONS = {
+    "yes": ENV.get("ASANA_FIELD_ACTIVE_YES", ""),
+    "no":  ENV.get("ASANA_FIELD_ACTIVE_NO", ""),
+}
+QUARTER_OPTIONS = {
+    "Q2": ENV.get("ASANA_FIELD_QUARTER_Q2", ""),
+    "Q3": ENV.get("ASANA_FIELD_QUARTER_Q3", ""),
+    "Q4": ENV.get("ASANA_FIELD_QUARTER_Q4", ""),
+}
 
 # ── Action Items tag options ──
 AI_TAG_OPTIONS = {
-    "email": "REPLACE",
-    "reply": "REPLACE",
-    "research": "REPLACE",
-    "prep": "REPLACE",
-    "schedule": "REPLACE",
-    "track": "REPLACE",
-    "log": "REPLACE",
-    "waiting": "REPLACE",
+    "email":    ENV.get("ASANA_AI_TAG_EMAIL", ""),
+    "reply":    ENV.get("ASANA_AI_TAG_REPLY", ""),
+    "research": ENV.get("ASANA_AI_TAG_RESEARCH", ""),
+    "prep":     ENV.get("ASANA_AI_TAG_PREP", ""),
+    "schedule": ENV.get("ASANA_AI_TAG_SCHEDULE", ""),
+    "track":    ENV.get("ASANA_AI_TAG_TRACK", ""),
+    "log":      ENV.get("ASANA_AI_TAG_LOG", ""),
+    "waiting":  ENV.get("ASANA_AI_TAG_WAITING", ""),
 }
 
 # ── API ──

@@ -10,8 +10,19 @@ and enum option GIDs, then prints or writes the .env lines.
 Boards must follow the canonical structure documented in SETUP.md:
   Main board sections:        Received, [GREEN], [YELLOW], Completed, Terminated
   Main board fields:          "Active on Accelerate?" (single-select: YES, NO)
+                              "ONR" (number)
+                              "Products to activate" (multi-select: Payments, Billing,
+                                Radar, Terminal, Connect, Invoicing, Tax, Sigma, Identity)
+                              "Account Executive" (text)
+                              "Activation Quarter" (single-select: Q2, Q3, Q4)
+                              "GLD" (date)
+                              "Is Platform?" (single-select: Yes, No)
+                              "Status (Accelerate)" (multi-select: [GREEN], [YELLOW],
+                                [RED], [LIVE], [TERMINATED], [COMPLETED])
+                              "Acct_id" (text)
   Action Items sections:      Today, This Week, Later, Waiting
-  Action Items fields:        Merchant (single-select), Tag (single-select),
+  Action Items fields:        Merchant (text), Action Tag (single-select: email, reply,
+                                research, prep, schedule, track, log, waiting),
                               Complexity (single-select: LOW, MEDIUM, HIGH)
 
 Usage:
@@ -68,6 +79,58 @@ MAIN_FIELDS = {
             "NO":  "ASANA_FIELD_ACTIVE_NO",
         },
     },
+    "ONR": {
+        "field_env": "ASANA_FIELD_ONR",
+    },
+    "Products to activate": {
+        "field_env": "ASANA_FIELD_PRODUCTS",
+        "options": {
+            "Payments":  "ASANA_FIELD_PRODUCT_PAYMENTS",
+            "Billing":   "ASANA_FIELD_PRODUCT_BILLING",
+            "Radar":     "ASANA_FIELD_PRODUCT_RADAR",
+            "Terminal":  "ASANA_FIELD_PRODUCT_TERMINAL",
+            "Connect":   "ASANA_FIELD_PRODUCT_CONNECT",
+            "Invoicing": "ASANA_FIELD_PRODUCT_INVOICING",
+            "Tax":       "ASANA_FIELD_PRODUCT_TAX",
+            "Sigma":     "ASANA_FIELD_PRODUCT_SIGMA",
+            "Identity":  "ASANA_FIELD_PRODUCT_IDENTITY",
+        },
+    },
+    "Account Executive": {
+        "field_env": "ASANA_FIELD_ACCOUNT_EXEC",
+    },
+    "Activation Quarter": {
+        "field_env": "ASANA_FIELD_ACTIVATION_QUARTER",
+        "options": {
+            "Q2": "ASANA_FIELD_QUARTER_Q2",
+            "Q3": "ASANA_FIELD_QUARTER_Q3",
+            "Q4": "ASANA_FIELD_QUARTER_Q4",
+        },
+    },
+    "GLD": {
+        "field_env": "ASANA_FIELD_GLD",
+    },
+    "Is Platform?": {
+        "field_env": "ASANA_FIELD_IS_PLATFORM",
+        "options": {
+            "Yes": "ASANA_FIELD_PLATFORM_YES",
+            "No":  "ASANA_FIELD_PLATFORM_NO",
+        },
+    },
+    "Status (Accelerate)": {
+        "field_env": "ASANA_FIELD_STATUS",
+        "options": {
+            "[GREEN]":      "ASANA_FIELD_STATUS_GREEN",
+            "[YELLOW]":     "ASANA_FIELD_STATUS_YELLOW",
+            "[RED]":        "ASANA_FIELD_STATUS_RED",
+            "[LIVE]":       "ASANA_FIELD_STATUS_LIVE",
+            "[TERMINATED]": "ASANA_FIELD_STATUS_TERMINATED",
+            "[COMPLETED]":  "ASANA_FIELD_STATUS_COMPLETED",
+        },
+    },
+    "Acct_id": {
+        "field_env": "ASANA_FIELD_ACCT_ID",
+    },
 }
 
 AI_SECTIONS = {
@@ -78,8 +141,20 @@ AI_SECTIONS = {
 }
 
 AI_FIELDS = {
-    "Merchant":   {"field_env": "ASANA_AI_FIELD_MERCHANT"},
-    "Tag":        {"field_env": "ASANA_AI_FIELD_TAG"},
+    "Merchant": {"field_env": "ASANA_AI_FIELD_MERCHANT"},
+    "Action Tag": {
+        "field_env": "ASANA_AI_FIELD_TAG",
+        "options": {
+            "email":    "ASANA_AI_TAG_EMAIL",
+            "reply":    "ASANA_AI_TAG_REPLY",
+            "research": "ASANA_AI_TAG_RESEARCH",
+            "prep":     "ASANA_AI_TAG_PREP",
+            "schedule": "ASANA_AI_TAG_SCHEDULE",
+            "track":    "ASANA_AI_TAG_TRACK",
+            "log":      "ASANA_AI_TAG_LOG",
+            "waiting":  "ASANA_AI_TAG_WAITING",
+        },
+    },
     "Complexity": {
         "field_env": "ASANA_AI_FIELD_COMPLEXITY",
         "options": {
@@ -225,16 +300,48 @@ def discover_project(pat: str, project_gid: str, section_map: dict, field_map: d
 def render_env_lines(values: dict) -> str:
     """Emit values as KEY=VALUE lines in a stable canonical order."""
     canonical_order = [
+        # Workspace
         "ASANA_WORKSPACE_GID",
         "ASANA_PROJECT_GID",
+        # Main board sections
         "ASANA_SECTION_RECEIVED",
         "ASANA_SECTION_GREEN",
         "ASANA_SECTION_YELLOW",
         "ASANA_SECTION_COMPLETED",
         "ASANA_SECTION_TERMINATED",
+        # Main board fields
         "ASANA_FIELD_ACTIVE",
         "ASANA_FIELD_ACTIVE_YES",
         "ASANA_FIELD_ACTIVE_NO",
+        "ASANA_FIELD_ONR",
+        "ASANA_FIELD_PRODUCTS",
+        "ASANA_FIELD_PRODUCT_PAYMENTS",
+        "ASANA_FIELD_PRODUCT_BILLING",
+        "ASANA_FIELD_PRODUCT_RADAR",
+        "ASANA_FIELD_PRODUCT_TERMINAL",
+        "ASANA_FIELD_PRODUCT_CONNECT",
+        "ASANA_FIELD_PRODUCT_INVOICING",
+        "ASANA_FIELD_PRODUCT_TAX",
+        "ASANA_FIELD_PRODUCT_SIGMA",
+        "ASANA_FIELD_PRODUCT_IDENTITY",
+        "ASANA_FIELD_ACCOUNT_EXEC",
+        "ASANA_FIELD_ACTIVATION_QUARTER",
+        "ASANA_FIELD_QUARTER_Q2",
+        "ASANA_FIELD_QUARTER_Q3",
+        "ASANA_FIELD_QUARTER_Q4",
+        "ASANA_FIELD_GLD",
+        "ASANA_FIELD_IS_PLATFORM",
+        "ASANA_FIELD_PLATFORM_YES",
+        "ASANA_FIELD_PLATFORM_NO",
+        "ASANA_FIELD_STATUS",
+        "ASANA_FIELD_STATUS_GREEN",
+        "ASANA_FIELD_STATUS_YELLOW",
+        "ASANA_FIELD_STATUS_RED",
+        "ASANA_FIELD_STATUS_LIVE",
+        "ASANA_FIELD_STATUS_TERMINATED",
+        "ASANA_FIELD_STATUS_COMPLETED",
+        "ASANA_FIELD_ACCT_ID",
+        # Action Items board
         "ASANA_AI_PROJECT_GID",
         "ASANA_AI_SECTION_TODAY",
         "ASANA_AI_SECTION_THIS_WEEK",
@@ -242,6 +349,14 @@ def render_env_lines(values: dict) -> str:
         "ASANA_AI_SECTION_WAITING",
         "ASANA_AI_FIELD_MERCHANT",
         "ASANA_AI_FIELD_TAG",
+        "ASANA_AI_TAG_EMAIL",
+        "ASANA_AI_TAG_REPLY",
+        "ASANA_AI_TAG_RESEARCH",
+        "ASANA_AI_TAG_PREP",
+        "ASANA_AI_TAG_SCHEDULE",
+        "ASANA_AI_TAG_TRACK",
+        "ASANA_AI_TAG_LOG",
+        "ASANA_AI_TAG_WAITING",
         "ASANA_AI_FIELD_COMPLEXITY",
         "ASANA_AI_COMPLEXITY_LOW",
         "ASANA_AI_COMPLEXITY_MEDIUM",
@@ -374,16 +489,6 @@ def main():
         print(f"ERROR: {e}", file=sys.stderr)
         sys.exit(1)
 
-    if errors:
-        print("Discovery completed with missing pieces:", file=sys.stderr)
-        for err in errors:
-            print(err, file=sys.stderr)
-        print(
-            "\nFix the issues above in Asana, then re-run setup-discover-asana.py.",
-            file=sys.stderr,
-        )
-        sys.exit(2)
-
     if args.write:
         target = Path(args.write)
         write_env(target, values)
@@ -391,6 +496,17 @@ def main():
     else:
         sys.stdout.write(render_env_lines(values))
         print(f"# Discovered {len(values)} keys (workspace: {workspace_names[0]}).", file=sys.stderr)
+
+    if errors:
+        print("\nDiscovery completed with missing pieces:", file=sys.stderr)
+        for err in errors:
+            print(err, file=sys.stderr)
+        print(
+            "\nAll found keys have been written. Fix the issues above in Asana,\n"
+            "then re-run setup-discover-asana.py to fill in the remaining keys.",
+            file=sys.stderr,
+        )
+        sys.exit(2)
 
 
 if __name__ == "__main__":
