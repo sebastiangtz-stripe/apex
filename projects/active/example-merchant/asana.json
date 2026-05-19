@@ -1,6 +1,10 @@
 {
-  "task_gid": "REPLACE",
-  "project_gid": "REPLACE",
-  "section": "REPLACE",
-  "subtask_gids": {}
+  "task_gid": "1214914654883475",
+  "project_gid": "1214852739116043",
+  "section": "Integration",
+  "subtask_gids": {
+    "#email \u2014 Send intro email confirming kick-off date \u2014 Complexity: M \u2014 Owner: [YOU": "1214914681995596",
+    "#research \u2014 Investigate Connect onboarding requirements for non-US sellers \u2014 Com": "1214914667794671",
+    "#track #waiting \u2014 Confirm legal entity setup \u2014 Complexity: L \u2014 Owner: [YOUR_INIT": "1214914655109295"
+  }
 }
