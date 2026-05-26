@@ -535,6 +535,8 @@ def main():
 
     subtotal = sum(stats.values())
     print(f"\nDone: {stats['created']} created, {stats['skipped']} skipped, {stats['failed']} failed ({subtotal} total)")
+    if stats["failed"]:
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

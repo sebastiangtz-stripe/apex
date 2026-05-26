@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """
 Parse a Slack handover thread into a structured proposal the
 handover-create.py script can act on.

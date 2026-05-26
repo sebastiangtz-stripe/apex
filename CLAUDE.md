@@ -44,6 +44,7 @@ Specialized Cursor subagents live in `.cursor/agents/`. Each has its own context
 | `recall` | Search lessons-learned by tag/topic/product for prior patterns | Before new research |
 | `setup` | Guided first-time workspace onboarding (identity, Asana, Hubble) | One-time |
 | `test-subagents` | Validate all agent/skill/rule contracts (runs inside template sync) | Pre-push |
+| `compass-update` | Generate Apex Project Compass update draft from git log + sessions | Biweekly |
 
 ---
 

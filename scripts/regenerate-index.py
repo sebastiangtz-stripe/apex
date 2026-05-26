@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """
 Regenerate projects/INDEX.md from filesystem + per-project PROJECT.md + Hubble snapshot.
 

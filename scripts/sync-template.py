@@ -64,6 +64,9 @@ RSYNC_EXCLUDES = [
     "*.pyo",
     ".DS_Store",
     "drift-audit-last-run.txt",
+    "obsidian-sync.md",
+    "obsidian-sync.py",
+    "e2e-test-*.md",
 ]
 
 # Files NEVER touched by sync (template owns these locally — never overwritten

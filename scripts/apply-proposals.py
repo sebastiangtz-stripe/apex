@@ -95,14 +95,14 @@ AI_COMPLEXITY = {
     "high":   ENV.get("ASANA_AI_COMPLEXITY_HIGH", ""),
 }
 AI_TAG_OPTIONS = {
-    "email":    "REPLACE",
-    "reply":    "REPLACE",
-    "research": "REPLACE",
-    "prep":     "REPLACE",
-    "schedule": "REPLACE",
-    "track":    "REPLACE",
-    "log":      "REPLACE",
-    "waiting":  "REPLACE",
+    "email":    ENV.get("ASANA_AI_TAG_EMAIL", ""),
+    "reply":    ENV.get("ASANA_AI_TAG_REPLY", ""),
+    "research": ENV.get("ASANA_AI_TAG_RESEARCH", ""),
+    "prep":     ENV.get("ASANA_AI_TAG_PREP", ""),
+    "schedule": ENV.get("ASANA_AI_TAG_SCHEDULE", ""),
+    "track":    ENV.get("ASANA_AI_TAG_TRACK", ""),
+    "log":      ENV.get("ASANA_AI_TAG_LOG", ""),
+    "waiting":  ENV.get("ASANA_AI_TAG_WAITING", ""),
 }
 
 
@@ -390,7 +390,7 @@ def multi_home_subtask(subtask_gid, merchant_name, raw_lower, due_on, complexity
         custom[AI_FIELD_MERCHANT] = merchant_name
     if AI_FIELD_TAG:
         for tag, gid in AI_TAG_OPTIONS.items():
-            if f"#{tag}" in raw_lower:
+            if f"#{tag}" in raw_lower and gid:
                 custom[AI_FIELD_TAG] = gid
                 break
     if AI_FIELD_COMPLEXITY:
@@ -565,7 +565,7 @@ def apply_auto_close(item, mapping_subtask_gids, slug, dry_run, run_report):
 
 def build_local_line(item):
     """Compose the action-items.md line from a proposal item."""
-    tags = " ".join(item.get("tags") or [])
+    tags = " ".join(f"#{t}" for t in (item.get("tags") or []))
     description = item.get("description") or ""
     complexity = (item.get("complexity") or "")[:1].upper() or "M"
     owner = item.get("owner") or "[YOUR_NAME]"
@@ -589,6 +589,9 @@ def build_subtask_notes(item):
         parts.append("")
         parts.append("Suggested Resources:")
         for r in resources:
+            if isinstance(r, str):
+                parts.append(f"- Ref — {r}")
+                continue
             kind = (r.get("kind") or "").lower()
             label_kind = {
                 "email": "Email",

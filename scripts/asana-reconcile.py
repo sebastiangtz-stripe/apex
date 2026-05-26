@@ -55,14 +55,14 @@ AI_COMPLEXITY = {
     "high":   ENV.get("ASANA_AI_COMPLEXITY_HIGH", ""),
 }
 AI_TAG_OPTIONS = {
-    "email":    "REPLACE",
-    "reply":    "REPLACE",
-    "research": "REPLACE",
-    "prep":     "REPLACE",
-    "schedule": "REPLACE",
-    "track":    "REPLACE",
-    "log":      "REPLACE",
-    "waiting":  "REPLACE",
+    "email":    ENV.get("ASANA_AI_TAG_EMAIL", ""),
+    "reply":    ENV.get("ASANA_AI_TAG_REPLY", ""),
+    "research": ENV.get("ASANA_AI_TAG_RESEARCH", ""),
+    "prep":     ENV.get("ASANA_AI_TAG_PREP", ""),
+    "schedule": ENV.get("ASANA_AI_TAG_SCHEDULE", ""),
+    "track":    ENV.get("ASANA_AI_TAG_TRACK", ""),
+    "log":      ENV.get("ASANA_AI_TAG_LOG", ""),
+    "waiting":  ENV.get("ASANA_AI_TAG_WAITING", ""),
 }
 
 def api(method, path, data=None):
@@ -127,7 +127,7 @@ def multi_home_subtask(subtask_gid, merchant_name, local_raw, due_on):
         custom[AI_FIELD_MERCHANT] = merchant_name
     if AI_FIELD_TAG:
         for tag, gid in AI_TAG_OPTIONS.items():
-            if f"#{tag}" in raw_lower:
+            if f"#{tag}" in raw_lower and gid:
                 custom[AI_FIELD_TAG] = gid
                 break
     if AI_FIELD_COMPLEXITY:

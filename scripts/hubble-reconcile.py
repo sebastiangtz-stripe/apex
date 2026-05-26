@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """
 Reconcile local merchant projects with the Hubble snapshot (SFDC + Kantata source of truth).
 

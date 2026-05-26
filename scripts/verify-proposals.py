@@ -165,7 +165,11 @@ def verify_file(path):
     for it in data.get("inline_gaps", []) or []:
         items_by_id[it.get("id")] = ("inline_gap", it)
 
+    if not isinstance(apply_status, dict):
+        return drift
     for item_id, status in apply_status.items():
+        if isinstance(status, str):
+            continue
         st = status.get("status")
         if st != "applied":
             continue
