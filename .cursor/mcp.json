@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "toolshed_extras": {
+      "command": "pay toolshed serve asana.gmail.hubble.slack.slack_public.starter_pack",
+      "args": [],
+      "env": {}
+    },
+    "toolshed_1509ee": {
+      "command": "pay toolshed serve zoom",
+      "args": [],
+      "env": {}
+    },
+    "toolshed_dba5bf": {
+      "command": "pay toolshed serve sourcegraph.admin",
+      "args": [],
+      "env": {}
+    }
+  }
+}
