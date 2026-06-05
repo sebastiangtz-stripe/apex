@@ -7,6 +7,11 @@
 -- To run: hubble-analyst reads this template, substitutes {{LEAD_FILTER}},
 -- and executes via run_hubble_query MCP. The query must never be modified
 -- beyond the filter substitution unless the user explicitly requests it.
+--
+-- SCHEMA NOTE: Only primary_contact_email is available from Hubble
+-- (email_user_primary in mavenlink.custom_fld_project_proserv). There is no
+-- email_user_secondary column. Secondary contacts can only be discovered via
+-- handover threads or Gmail scan — never from Hubble.
 
 WITH custom_fields AS (
   SELECT

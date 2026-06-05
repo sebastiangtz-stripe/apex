@@ -161,8 +161,8 @@ and a silent retry just hides the problem.
 - Confirm `HUBBLE_LEAD_FILTER` was set in Phase 1 — if blank, ask for full
   name again.
 - Assume Hubble access is available. Do NOT ask the user whether they have
-  access. Just confirm: *"Hubble pre-configured with saved query
-  `stripe/c5619e62`, filtered by your name."*
+  access. Just confirm: *"Hubble pre-configured with local query template
+  (`templates/hubble-query.sql`), filtered by your name."*
 - If Hubble fails at runtime (not during setup), the `/hubble-analyst`
   subagent surfaces the error — no preemptive questions needed here.
 
@@ -189,10 +189,12 @@ then ask:
 
 Options: `Yes` / `Not now`
 
-- **Yes** — invoke `/hubble-analyst`. For each project in `new_projects`,
-  hand off to the CLAUDE.md "new project" conversational mapping to scaffold
-  the folder, PROJECT.md, Asana task, and hubble.json. Process them
-  sequentially, confirming each slug before creating.
+- **Yes** — invoke `/hubble-analyst`. Then scaffold projects in this exact order:
+  1. Run `python3 scripts/scaffold-from-hubble.py --apply` to create all folders + PROJECT.md with Email search and Key Contacts pre-filled from Hubble contacts.
+  2. Run `python3 scripts/hubble-reconcile.py --backfill` to populate External Links, AONR, dates, and any remaining contact fields.
+  3. For each new project, search the handover channel (`HANDOVER_CHANNEL_ID`) by merchant name or AE name. If a thread is found, parse it via `scripts/handover-parse.py` to extract contacts and populate Key Contacts + Handover link.
+  4. Run `python3 scripts/sync-to-asana.py` to create Asana tasks — **only after** steps 1-3 so descriptions are fully populated.
+  Confirm each batch before proceeding (don't run all 4 steps silently).
 - **Not now** — exit cleanly.
 
 ## Output

@@ -403,6 +403,18 @@ def apply_backfill(slug_dir: Path, row: dict, fetched_at: str, dry_run: bool) ->
                     )
                 changes.append("Email search")
 
+        # Populate Key Contacts when TBD and primary_contact_email available
+        key_contacts_match = re.search(r"(## Key Contacts\s*\n)(.*?)(\n## |\Z)", text, re.DOTALL)
+        if key_contacts_match:
+            contacts_body = key_contacts_match.group(2).strip()
+            if not contacts_body or contacts_body == "TBD":
+                contact_line = f"- {contact_email} — merchant contact (from Hubble)"
+                text = text.replace(
+                    key_contacts_match.group(0),
+                    f"{key_contacts_match.group(1)}\n{contact_line}\n\n{key_contacts_match.group(3)}"
+                )
+                changes.append("Key Contacts")
+
     if text != original:
         if "PROJECT.md" not in changes:
             changes.append("PROJECT.md")
