@@ -147,6 +147,10 @@ def main():
                     parts.append(f"from:{contact_email} OR to:{contact_email}")
                     email_query = " OR ".join(parts)
 
+            contacts_section = "TBD"
+            if contact_email:
+                contacts_section = f"- {contact_email} — merchant contact (from Hubble)"
+
             project_md.write_text(
                 f"# {merchant_display}\n\n"
                 f"**Status**: Discovery\n"
@@ -154,7 +158,7 @@ def main():
                 f"**Hubble Project ID**: {r['project_id']}\n"
                 f"**Account ID**: TBD\n\n"
                 f"## Key Contacts\n\n"
-                f"{contact_email if contact_email else 'TBD'}\n\n"
+                f"{contacts_section}\n\n"
                 f"## Communication\n\n"
                 f"- Email search: {email_query}\n"
                 f"- Slack channels: TBD\n\n"
@@ -192,7 +196,10 @@ def main():
     print(f"\nCreated {len(created)} project folder(s):")
     for s in created:
         print(f"  projects/active/{s}/")
-    print("\nNext: run `python3 scripts/sync-to-asana.py` and `python3 scripts/hubble-reconcile.py --backfill` to complete setup.")
+    print("\nNext steps (order matters):")
+    print("  1. python3 scripts/hubble-reconcile.py --backfill   # populate contacts, links, Email search")
+    print("  2. Search handover channel per merchant              # extract contacts from Slack threads")
+    print("  3. python3 scripts/sync-to-asana.py                  # push to Asana AFTER data is populated")
 
 
 if __name__ == "__main__":
