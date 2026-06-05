@@ -57,15 +57,17 @@ If `.env` looks healthy, run these in **parallel** where possible:
 1. Run `TZ="[YOUR_TIMEZONE]" date '+%A %Y-%m-%d %H:%M:%S %Z'` for current date/time (includes day of week). **Always use your local timezone.** Never infer the day of week — read it from the command output.
 2. **Asana reconcile**: Run `python3 scripts/asana-reconcile.py` to sync any changes made in Asana since last session (items completed on mobile, etc.).
 3. **Silence scan**: Run `python3 scripts/last-activity.py --threshold-days 7 --json` to surface projects silent ≥7 days. Canonical helper parses both `## YYYY-MM-DD` and `## [YYYY-MM-DD]` H2 headers using `max()` (robust against out-of-order entries). Pass `--include-scan-state` if you want scanner activity to count as engagement. Never reimplement this with inline `re.findall + dates[-1]` — that silently inverts the silence direction since timelines are newest-at-top.
-4. **Calendar**: Fetch today's calendar (skip on weekends — note "Weekend mode").
+4. **Calendar**: Fetch today's calendar (skip on weekends — note "Weekend mode"). If any event within the next 2 hours matches a merchant name in `projects/active/`, note it in the summary: "Meeting with [merchant] in Xh — run `/meeting-prep <slug>` before the call."
 5. **Session continuity**: Read most recent `sessions/*.md` for continuity.
 6. **Hubble sync**: Invoke `/hubble-analyst`. It refreshes the snapshot if stale and returns a structured diff (new projects, archive candidates, drift). The verbose JSON stays inside the subagent.
 7. **Pending dual-writes check** (cheap filesystem scan, ~1s): list `data/scan-proposals/*.json` (one level deep, NOT including `applied/`). If any non-archived files exist, the prior session ended with proposals that did not finish applying. Read each file's `apply_status`; count items still in non-terminal states (anything other than `applied`, `skipped_dedup`, `skipped_low_confidence`, `skipped_human_review`). Surface in the startup summary as a top-priority line. Run `python3 scripts/apply-proposals.py --resume` to apply them — the script is idempotent (re-running on already-applied items is a no-op) and respects a `--max-age-days 7` guard for stale proposals. NEVER skip this check; it is the recovery path for the 2026-05-12-class failure mode where 44 dual-writes were silently lost.
-8. After steps 2-7 complete, read `action-items.md` files for overdue/upcoming items (3 days), and read `commitments.md` files (where present) for any `Status: overdue` lines. Asana is the authority for open items; local files are the backup.
-9. Present concise summary:
+8. **Communication scan**: Invoke the `scan-review` skill (full pipeline: handover sweep → fetch → ingest → review → apply). This is the core daily value — fetches new emails and Slack for all active merchants. Respects the 4-hour TTL (merchants scanned recently are skipped automatically in Phase 1a). On weekends, skip unless explicitly requested. If this step fails (MCP errors, timeouts), log the error in the summary but don't block the rest of startup.
+9. After steps 2-8 complete, read `action-items.md` files for overdue/upcoming items (3 days), and read `commitments.md` files (where present) for any `Status: overdue` lines. Asana is the authority for open items; local files are the backup.
+10. Present concise summary:
  - **Pending dual-writes** (top of summary if any): "N proposals across M merchants from prior session not yet applied. Run `python3 scripts/apply-proposals.py --resume` to apply." Always surface first if non-empty — it represents work the prior session believed was committed but wasn't.
  - **Asana sync**: Changes detected by reconcile (if any)
- - **Today's schedule**: Meetings with merchant matches
+ - **Scan results**: N merchants scanned, N new emails/threads ingested, N action items created, N auto-closed. Surface any errors from failed fetches.
+ - **Today's schedule**: Meetings with merchant matches. Flag any meeting within 2h with `/meeting-prep` suggestion.
  - **Silent merchants**: Projects with no activity in 7+ days, sorted by AONR. 7-13d = "Silent", 14+d = "CRITICAL — Silent". Suggest: scan email/Slack, ping contact, check with SFDC Opportunity Owner.
  - **Overdue items**: Action items past due (informational — not top priority)
  - **Broken commitments**: Surface ANY `commitments.md` line with `Status: overdue` from any merchant. These get higher priority than overdue action items because they represent things you explicitly promised the merchant. Show as `[<slug>] promised <date>: "<promise>" (overdue Nd)`.
@@ -79,7 +81,7 @@ If `.env` looks healthy, run these in **parallel** where possible:
  - **Template drift (apex)**: Run `python3 scripts/sync-template.py --check`. If it reports DRIFT, surface a single-line note: *"Template drift: N template-relevant paths differ from apex. Run `python3 scripts/sync-template.py --push --message <msg>` after wrap-up."* Non-blocking; informational only.
  - **Last session**: Date, 1-sentence summary, pending count
  - **Quick actions**: 1-2 concrete next steps
-10. At scale (35+): Cap at top 10 items, summarize rest
+11. At scale (35+): Cap at top 10 items, summarize rest
 
 ---
 
@@ -91,6 +93,8 @@ Interpret intent, not rigid commands. Key mappings:
 
 | User says | Action |
 |---|---|
+| "Good morning" / "start the day" / "daily protocol" / "let's go" | Full auto-startup (steps 0-11 including communication scan). This is the default — every new conversation runs the full pipeline. |
+| "Quick status" / "just status" | Run auto-startup WITHOUT step 8 (communication scan). Fast diagnostic only (~10s), no MCP calls to Gmail/Slack. Use when you just want to check state mid-day without waiting for scans. |
 | "New project: [Merchant], [acct_id]" | Create `projects/active/<merchant-kebab>/` with template files, populate `## External Links` with the four canonical labels (`Handover:`, `Manifest:`, `Salesforce:`, `Kantata Workspace:`) — extract `Handover` (Slack permalink) + `Manifest` (admin URL) from the handover thread when handing-over from Slack; `Salesforce` + `Kantata Workspace` come from Hubble (via `hubble-reconcile.py --backfill`). Create Asana task in Integration section, save GID to `asana.json`, update INDEX.md. |
 | User pastes a Slack handover permalink / thread text OR says "here's a handover", "new handover from Slack", "set up project from handover", "/handover" | Invoke the `handover-bootstrap` skill (paste mode). It parses the thread via `scripts/handover-parse.py`, surfaces a one-line preview, then runs `scripts/handover-create.py` which creates the folder, PROJECT.md (HO+MAN+contact+AE pre-filled), Asana task, Hubble backfill, and appends to `data/handover-state.json`. End-to-end automated. |
 | "Here's the transcript from my call with [merchant]" | Save to `raw/comms.md`, summary to `timeline.md`, extract action items as Asana subtasks |
@@ -316,7 +320,7 @@ Cursor subagents (`.cursor/agents/*`) handle context-heavy work in isolated wind
 | Email/Slack scan (one merchant or all) | `scan-review` skill → fans out `/merchant-scanner` (fetch relay) → `python3 scripts/ingest-comms.py` |
 | Review phase after scan | `scan-review` skill → fans out `/comms-analyst` per merchant → `python3 scripts/apply-proposals.py --resume` |
 | Hubble snapshot refresh + diff | `/hubble-analyst` (Auto-Startup Agent E or on demand) |
-| Auto-Startup | 5 parallel agents: A (Asana reconcile), B (silence scan), C (calendar), D (session), E (Hubble) |
+| Auto-Startup | Parallel: A (Asana reconcile), B (silence scan), C (calendar), D (session), E (Hubble), F (dual-write check). Then sequential: G (scan-review — full Gmail/Slack pipeline) |
 | Meeting Prep | `meeting-prep` skill (parallel reads of PROJECT.md + Asana + comms + fresh Gmail/Slack) |
 | Email drafting/sending | `email-agent` skill (sequential, returns to main thread for approval) |
 
