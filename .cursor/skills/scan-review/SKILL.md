@@ -45,17 +45,25 @@ returns suspect entries, surface them in the final triage summary under a
 2. For each merchant, read:
    - `PROJECT.md` → extract `Email search` query and `Slack channels`
    - `scan-state.json` → extract `last_email_scan`, `last_slack_scan`, and `slack_thread_state`
+   - `hubble.json` → extract `primary_contact_email` (fallback for email query construction)
 3. Apply 4-hour TTL: skip merchants whose `last_email_scan` < 4 hours old.
-4. Build `active_threads` list from `slack_thread_state`: include threads where `last_message_ts` is within the last 30 days (skip ancient threads to avoid quota waste). Format: `[{ channel_id, thread_ts }]`.
-5. Fan out one `/merchant-scanner` invocation per eligible merchant **in parallel** (single message with N tool calls). Pass each subagent:
+4. **Construct email_query** (never skip a merchant just because Email search is TBD):
+   - If `Email search` in PROJECT.md is populated and not "TBD" → use it as-is.
+   - Else if `primary_contact_email` exists in `hubble.json`:
+     - Non-generic domain (not gmail/icloud/hotmail/outlook/yahoo) → `from:<domain> OR to:<domain>`
+     - Generic/personal domain → `from:"<Merchant Name>" OR from:<email> OR to:<email>`
+   - Else → fall back to merchant name search: `"<Merchant Name>"` (H1 from PROJECT.md).
+   - **Always invoke the scanner** — even a name-based fallback surfaces contacts that can be added to PROJECT.md later.
+5. Build `active_threads` list from `slack_thread_state`: include threads where `last_message_ts` is within the last 30 days (skip ancient threads to avoid quota waste). Format: `[{ channel_id, thread_ts }]`.
+6. Fan out one `/merchant-scanner` invocation per eligible merchant **in parallel** (single message with N tool calls). Pass each subagent:
    - `slug`
-   - `email_query` (the raw query string from PROJECT.md)
+   - `email_query` (constructed per step 4 — never "TBD")
    - `slack_channels` (list of channel IDs)
    - `email_since` (from scan-state.json)
    - `slack_since` (from scan-state.json)
-   - `active_threads` (from step 4 — enables re-fetch of known threads for new replies)
-6. Each subagent writes a staging file to `data/staging/<slug>-<YYYY-MM-DD>.json` and returns `{ slug, emails_fetched, slack_threads_fetched, errors }`.
-7. Aggregate returns — note any errors for the triage summary.
+   - `active_threads` (from step 5 — enables re-fetch of known threads for new replies)
+7. Each subagent writes a staging file to `data/staging/<slug>-<YYYY-MM-DD>.json` and returns `{ slug, emails_fetched, slack_threads_fetched, errors }`.
+8. Aggregate returns — note any errors for the triage summary.
 
 The fetch subagent does NO filtering, NO dedup, NO file writes to project folders. It only calls MCP tools and dumps raw results to staging.
 

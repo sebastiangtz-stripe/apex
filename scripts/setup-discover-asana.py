@@ -55,6 +55,7 @@ import tempfile
 import urllib.error
 import urllib.request
 from pathlib import Path
+from typing import Optional
 
 
 WORKSPACE_ROOT = Path(__file__).resolve().parent.parent
@@ -233,7 +234,7 @@ def parse_project_ref(ref: str) -> str:
     )
 
 
-def parse_workspace_from_url(ref: str) -> str | None:
+def parse_workspace_from_url(ref: str) -> Optional[str]:
     """Extract workspace GID from a new-format Asana URL. Returns None if not present."""
     m = URL_WORKSPACE_RE.search(ref)
     return m.group(1) if m else None
