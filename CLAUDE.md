@@ -152,7 +152,7 @@ Interpret intent, not rigid commands. Key mappings:
 
 ### Hubble Sync Protocol
 Runs at the start of every session as part of auto-startup (Agent A above), and on demand when the user says "sync Hubble" / "reconcile".
-1. Check mtime of `data/hubble-snapshot.json`. If missing or older than `HUBBLE_SNAPSHOT_TTL_HOURS` (default 24h), run the saved query via `run_hubble_query` with the SQL from the saved query plus `AND lower(p.project_lead_user_name) LIKE '%<your_first_name_lowercased>%'` appended. Overwrite the snapshot with `{ fetched_at, lead_filter, saved_query_id, hubble_query_id, row_count, projects }`.
+1. Check mtime of `data/hubble-snapshot.json`. If missing or older than `HUBBLE_SNAPSHOT_TTL_HOURS` (default 24h), run the predetermined saved query via `run_hubble_query` using saved query ID `stripe/c5619e62`. **Never modify, rewrite, or append to the query SQL** — run it exactly as saved. Filter the returned rows locally by `HUBBLE_LEAD_FILTER` (case-insensitive substring match on `project_lead_user_name`). Overwrite the snapshot with `{ fetched_at, lead_filter, saved_query_id, row_count, projects }`.
 2. Run `python3 scripts/hubble-reconcile.py` to diff. In the startup summary, surface only if non-empty: `NEW PROJECTS` (Hubble rows without a local folder), `ARCHIVE CANDIDATES` (local folders missing from Hubble `In Progress`), and material `DRIFT` (AONR / AE / dates).
 3. On explicit user confirmation of drift, run `python3 scripts/hubble-reconcile.py --backfill` to apply PROJECT.md + `hubble.json` updates.
 4. Never auto-archive or auto-create projects from a diff; these remain human-confirmed operations.
