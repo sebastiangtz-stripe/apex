@@ -1,11 +1,15 @@
 # Setup
 
+If you are onboarding a consultant, start with
+[`CONSULTANT_ONBOARDING.md`](CONSULTANT_ONBOARDING.md). This file is the
+technical setup reference and manual fallback.
+
 The fastest path from a fresh clone to a working assistant is the agent-led
 `/setup` skill. Manual instructions are kept below as a fallback in case the
 skill breaks, you prefer to do it by hand, or you're configuring something
 the skill doesn't yet cover.
 
-## Quick start (agent-led, ~5 min)
+## Quick start (agent-led, ~3 min)
 
 ```bash
 git clone <your-fork-url> accelerate-pm-assistant
@@ -14,26 +18,31 @@ cp .env.example .env
 cursor .
 ```
 
-In the Cursor chat, type:
+In the Cursor chat, paste `/setup` with your intake snippet in one message:
 
 ```
 /setup
+Slack: yourhandle
+Asana PAT: <your token>
+Main board: <url from workspace owner>
+Action Items board: <url from workspace owner>
 ```
 
 The assistant will:
 
-1. Ask for your timezone, full name, and email aliases (question boxes).
-2. Ask for your Asana Personal Access Token.
-3. Ask for the URLs of your two Asana boards (main merchant board + Action
-   Items cross-project).
-4. Call the Asana REST API to auto-discover all section + custom-field +
+1. Parse the snippet and resolve your full name from Home (via Slack handle).
+2. Auto-detect your timezone from the machine.
+3. Derive your email (`<handle>@stripe.com, accelerate@stripe.com`).
+4. Write the PAT and extract project GIDs from the board URLs.
+5. Call the Asana REST API to auto-discover all section + custom-field +
    enum-option GIDs, and write them to `.env` for you.
-5. Confirm the shared Hubble saved-query default and set your lead filter.
-6. Run a smoke test (`test-subagents.py` + `asana-reconcile.py --dry-run`).
-7. Optionally help you create your first merchant project.
+6. Confirm the Hubble saved query (`stripe/c5619e62`) is pre-configured.
+7. Run a smoke test (`test-subagents.py` + `asana-reconcile.py --dry-run`).
+8. Optionally help you create your first merchant project.
 
-That's it — when the skill says *"workspace configured"* you're ready to
-say *"what's on the board?"* and exercise the full auto-startup.
+No interactive questions unless something fails. When the skill says
+*"workspace configured"* you're ready to say *"what's on the board?"* and
+exercise the full auto-startup.
 
 ## Prerequisites
 

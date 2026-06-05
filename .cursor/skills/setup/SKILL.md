@@ -1,12 +1,12 @@
 ---
 name: setup
 description: >-
-  Guided first-time workspace setup. Walks a teammate from a fresh clone to a
-  working `.env` in one conversation: collects identity + Asana PAT + board
-  URLs, auto-discovers all Asana GIDs via the REST API, defaults the shared
-  Hubble query, and runs a smoke test. Use when the user says "/setup", "set
-  up", "set me up", "onboarding", "onboard me", "first time", "initialize",
-  "I'm new here", or when the auto-startup detects an unconfigured `.env`.
+  Guided first-time workspace setup. Accepts an intake snippet (Slack handle,
+  Asana PAT, two board URLs) pasted alongside /setup, auto-resolves identity
+  via Home lookup + machine timezone, auto-discovers all Asana GIDs, and runs
+  a smoke test. Use when the user says "/setup", "set up", "set me up",
+  "onboarding", "onboard me", "first time", "initialize", "I'm new here", or
+  when the auto-startup detects an unconfigured `.env`.
 ---
 
 # Setup
@@ -15,10 +15,22 @@ Onboarding lives in one place. Read [`SETUP.md`](SETUP.md) for the manual
 fallback — this skill is the agent-led path that does most of the work for
 the user.
 
-The skill collects identity + Asana credentials, calls Asana's REST API to
-auto-discover the ~14 section + custom-field + option GIDs, writes `.env`
-atomically, and runs a smoke test. The user only types a name, a token, and
-two URLs.
+The skill parses an intake snippet, resolves identity from the Slack handle
+via Home, auto-detects timezone, calls Asana's REST API to discover all
+section + custom-field + option GIDs, writes `.env` atomically, and runs a
+smoke test. The user only provides 4 values in one paste.
+
+## Intake Snippet Format
+
+```
+Slack: <handle>
+Asana PAT: <token>
+Main board: <url>
+Action Items board: <url>
+```
+
+The workspace owner pre-fills the handle and board URLs; the user only
+generates and pastes their Asana PAT.
 
 ## When to invoke
 
@@ -34,7 +46,7 @@ two URLs.
 Run the phases in order. Phases 0–5 must all succeed before announcing the
 workspace ready. Phase 6 is optional.
 
-### Phase 0 — Detect state
+### Phase 0 — Detect state + parse snippet
 
 Read `.env`. Decide:
 
@@ -45,60 +57,78 @@ Read `.env`. Decide:
   "your `.env` looks already configured — re-run setup anyway?" with options
   `Yes, re-run everything` / `No, exit` / `Rotate one specific key`.
 
-Tell the user what you found in one sentence before moving on.
+**Parse the user's message for the intake snippet.** Look for lines matching:
+- `Slack:` — Slack handle (no leading `@`)
+- `Asana PAT:` — the token value
+- `Main board:` — full Asana URL
+- `Action Items board:` — full Asana URL
 
-### Phase 1 — Identity
+Matching is case-insensitive on the label, and tolerant of extra whitespace.
 
-Use `AskQuestion` to collect:
+**If all 4 fields are present** → proceed directly to Phase 1 with no
+questions.
 
-1. **Timezone** — single-select from these common Stripe TZs:
-   `America/Los_Angeles`, `America/New_York`, `[YOUR_TIMEZONE]`,
-   `Europe/Dublin`, `Europe/London`, `Asia/Singapore`, `Australia/Sydney`,
-   `Other (I'll type it)`. If `Other`, ask a follow-up text question for the
-   IANA TZ name.
-2. **Full name** — free text via a normal chat-turn question
-   ("What's your full name as it appears in Hubble / Stripe directory?"). This
-   becomes `HUBBLE_LEAD_FILTER`.
-3. **Email aliases** — free text ("What Stripe email aliases do you send
-   merchant comms from? Comma-separated."). Becomes `MY_OUTBOUND_ADDRESSES`.
+**If some fields are present but others missing** → accept what's there,
+tell the user which are missing, and ask them to provide only the missing
+values.
 
-Write all three to `.env` immediately using the atomic merge logic below — do
-not batch into a single end-of-phase write.
+**If no snippet detected** → surface this prompt and wait:
 
-### Phase 2 — Asana credentials
+> Fill in this snippet and paste it back (your setup guide has the details):
+>
+> ```
+> Slack: 
+> Asana PAT: 
+> Main board: 
+> Action Items board: 
+> ```
 
-Use `AskQuestion`:
+Tell the user one sentence about what you found in `.env` before moving on.
 
-- *"Have you generated an Asana Personal Access Token at
-  app.asana.com/0/my-apps?"* — options `Yes, I have it ready` /
-  `Not yet (open link)` / `Skip (I'll set up Asana later)`.
+### Phase 1 — Auto-resolve identity (no user interaction)
 
-If `Skip`, jump to Phase 4 and leave Asana keys unset. If `Not yet`, surface
-the link and wait. If `Yes`, ask the user to paste the PAT in their next
-message.
+From the parsed snippet, resolve everything automatically:
 
-**Persist the PAT.** Write it to `.env` immediately as `ASANA_PAT=<value>`.
-This is the one and only time the user should ever have to type it — every
-downstream script (`sync-to-asana.py`, `asana-reconcile.py`,
-`setup-discover-asana.py --pat-from-env`) reads it from `.env`. macOS
-filesystem permissions + `.gitignore` are the security layer; do not invent
-a "more secure" alternative (no keychain prompts, no per-session re-entry,
-no environment-variable-only mode). The user said "I will set this up once".
+1. **Timezone** — auto-detect from the machine:
+   ```
+   readlink /etc/localtime | sed 's|.*/zoneinfo/||'
+   ```
+   Do NOT ask the user — always read from the system.
 
-**Don't echo it back to chat.** After writing, confirm with the literal
+2. **Full name** — look up the Slack handle via Home internal search
+   (`execute_internal_search` with `filter_types: ["person"]`). Extract the
+   `title` field from the result. This becomes `HUBBLE_LEAD_FILTER`.
+   - If the lookup fails (no result, MCP error), fall back to asking: "What's
+     your full name as it appears in Hubble / the Stripe directory?"
+
+3. **Email** — derive as `<handle>@stripe.com, accelerate@stripe.com`. Write
+   to `MY_OUTBOUND_ADDRESSES`.
+
+4. **Slack handle** — from snippet. Write to `SLACK_HANDLE`.
+
+5. **Handover channel** — hardcoded for AMER. Write
+   `HANDOVER_CHANNEL_ID=C02HZETBG75` automatically.
+
+6. **Workspace GID** — if the board URL uses the new format
+   (`/1/<workspace>/project/<project>/list/...`), extract from the URL. If
+   old format, let the discovery script resolve it from the PAT.
+
+Write all values to `.env` immediately using the atomic merge logic.
+
+After writing, surface a one-line confirmation:
+*"Identity resolved: <Name>, <timezone>, <handle>@stripe.com"*
+
+### Phase 2 — Asana credentials (from snippet, no questions)
+
+- Write `ASANA_PAT` from the snippet to `.env` immediately.
+- Parse both board URLs to extract project GIDs.
+  - New format: `https://app.asana.com/1/<workspace>/project/<project_gid>/list/...`
+  - Old format: `https://app.asana.com/0/<project_gid>/list`
+- If a URL fails to parse, ask the user to re-paste just that URL (don't
+  reject everything else).
+
+**Don't echo the PAT back to chat.** After writing, confirm with the literal
 string `PAT stored` — no fingerprint, no first/last characters, no length.
-This is purely a chat-display rule so a screenshot of the conversation
-doesn't expose the token; it has nothing to do with where the token is
-stored.
-
-Then ask, in one chat-turn message, for both board URLs:
-
-> Paste the URL of your **main merchant board** and your **Action Items
-> cross-project** (one per line). They look like
-> `https://app.asana.com/0/<PROJECT_GID>/list`.
-
-Parse both GIDs from the URLs. If parsing fails, ask the user to confirm or
-paste the raw numeric GID.
 
 ### Phase 3 — Auto-discover
 
@@ -116,7 +146,7 @@ Handle the exit codes:
 
 - `0` → discovery clean. Tell the user how many keys were written (one line).
 - `1` → auth failure or malformed URL. Surface stderr verbatim, ask the user
-  to either regenerate the PAT or re-paste the board URL, then re-run Phase 2.
+  to either regenerate the PAT or re-paste the board URL, then re-run.
 - `2` → one or more sections / fields / enum options are missing in Asana.
   Surface the full stderr block verbatim — it lists exactly what's missing
   and what was found. Ask the user to fix the board in Asana, then re-run
@@ -126,41 +156,15 @@ Do **not** retry automatically. Discovery failures almost always mean the
 Asana board doesn't match the canonical structure documented in `SETUP.md`,
 and a silent retry just hides the problem.
 
-### Phase 3.5 — Slack handover channel
-
-Two short `AskQuestion` prompts:
-
-1. *"What's your Slack handle (no leading `@`)?"* — free-text follow-up.
-   Write to `.env` as `SLACK_HANDLE=<value>`. Used by `/handover-scanner` to
-   detect when a handover thread tags the user.
-2. *"What's the channel ID for `#ven-ext-stripe-accelerate-amer` (or your
-   region's handover channel)?"* — single-select:
-   - `I'll paste it now` → free-text follow-up, write to `.env` as
-     `HANDOVER_CHANNEL_ID=<value>`.
-   - `Look it up for me` → use the Slack MCP `slack_search` (or equivalent)
-     to find the channel by name; surface the resolved ID and ask the user
-     to confirm before writing.
-   - `Skip for now` → leave as `REPLACE`; the handover scanner will no-op
-     gracefully until the user fills it in later.
-
-`HANDOVER_CHANNEL_ID_LEGACY` is already defaulted in `.env.example` and
-doesn't need user input.
-
 ### Phase 4 — Hubble
 
-The shared saved-query UUID is already defaulted in `.env.example`. This
-phase only needs to:
-
-- Confirm `HUBBLE_LEAD_FILTER` was set in Phase 1 — if blank, ask again.
-- Tell the user the Hubble query is pre-filled and they don't need to do
-  anything else for it.
-- Use `AskQuestion` "Do you have Hubble MCP access wired in Cursor?" with
-  options `Yes` / `No / not sure` / `Skip Hubble entirely`. If `No`, point
-  them at the Toolshed MCP discovery flow. If `Skip`, leave the env as-is
-  and tell them the `/hubble-analyst` subagent will no-op gracefully.
-
-Do not attempt a Hubble query yourself — `/hubble-analyst` is the only
-place that calls the MCP tool. Confirming `.env` is enough.
+- Confirm `HUBBLE_LEAD_FILTER` was set in Phase 1 — if blank, ask for full
+  name again.
+- Assume Hubble access is available. Do NOT ask the user whether they have
+  access. Just confirm: *"Hubble pre-configured with saved query
+  `stripe/c5619e62`, filtered by your name."*
+- If Hubble fails at runtime (not during setup), the `/hubble-analyst`
+  subagent surfaces the error — no preemptive questions needed here.
 
 ### Phase 5 — Smoke test
 
@@ -173,43 +177,38 @@ Run two checks back-to-back:
    PAT is wrong and we restart Phase 2. If it errors with 403/404, one of
    the board GIDs is wrong and we restart Phase 2.
 
-On both green, present a single-line "✓ workspace configured" summary plus
-the counts (skills validated, Asana objects resolved, Hubble status).
+On both green, present a single-line summary plus the counts (skills
+validated, Asana objects resolved, Hubble status).
 
-### Phase 6 — First project (optional)
+### Phase 6 — Scaffold projects
 
-Use `AskQuestion`: *"Create your first merchant project now?"* with options
-`Yes, from Hubble` / `Yes, from the example scaffold` /
-`No, I'll do it later`.
+After the smoke test passes, present the success message (see Output below),
+then ask:
 
-- **From Hubble** — invoke `/hubble-analyst`. Surface its `new_projects` list
-  and ask which one to scaffold. Hand off to the CLAUDE.md "new project"
-  conversational mapping — do not reimplement creation here.
-- **From scaffold** — ask for the merchant name and account ID, then follow
-  the same CLAUDE.md "new project" flow.
-- **Later** — exit cleanly with a one-liner pointing at the relevant
-  CLAUDE.md section.
+*"Want me to scan Hubble for your projects and start scaffolding them?"*
+
+Options: `Yes` / `Not now`
+
+- **Yes** — invoke `/hubble-analyst`. For each project in `new_projects`,
+  hand off to the CLAUDE.md "new project" conversational mapping to scaffold
+  the folder, PROJECT.md, Asana task, and hubble.json. Process them
+  sequentially, confirming each slug before creating.
+- **Not now** — exit cleanly.
 
 ## Output
 
-End of run, post one consolidated summary:
+On successful setup, present exactly this:
 
 ```
-## Setup complete — <ISO date>
-
-- Identity: <name>, <tz>, <N email aliases>
-- Asana: workspace `<workspace_name>`, <N keys discovered>
-- Hubble: pre-filled (lead filter: `<filter>`) | skipped
-- Smoke tests: test-subagents OK, asana-reconcile --dry-run OK
-- First project: <slug> created | deferred
-
-You're ready. Say "what's on the board?" to exercise the full auto-startup.
+Setup complete. Your workspace is ready.
 ```
+
+Then immediately ask whether to scan Hubble and scaffold projects (Phase 6).
 
 ## Hard rules
 
 - **Always persist the Asana PAT to `.env`.** The user types it once during
-  Phase 2 and never again. Every downstream script reads it from `.env` via
+  setup and never again. Every downstream script reads it from `.env` via
   `--pat-from-env` or direct env load. Do not invent alternative storage
   (keychain, per-session prompt, env-var-only). macOS filesystem permissions
   + `.gitignore` are the security model.
@@ -241,3 +240,6 @@ You're ready. Say "what's on the board?" to exercise the full auto-startup.
 - **Never commit `.env`.** If the user asks "should I commit this?", say no
   — `.env` is gitignored on purpose and the sync-template leak scan would
   reject it.
+- **Home lookup is best-effort.** If the internal search fails or returns no
+  person result for the handle, fall back to asking the user for their full
+  name. Do not block the entire setup on a Home MCP failure.

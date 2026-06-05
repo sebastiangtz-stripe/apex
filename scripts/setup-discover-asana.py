@@ -204,21 +204,39 @@ def api_get(pat: str, path: str) -> dict:
 # ── URL / GID parsing ─────────────────────────────────────────────────────────
 
 GID_RE = re.compile(r"^\d{6,}$")
+# New format: /1/<workspace_gid>/project/<project_gid>/list/...
+URL_PROJECT_RE = re.compile(r"app\.asana\.com/\d+/\d+/project/(\d{6,})")
+# Old format: /0/<project_gid>/list
 URL_GID_RE = re.compile(r"app\.asana\.com/\d+/(\d{6,})")
+# Workspace GID from new format: /1/<workspace_gid>/project/...
+URL_WORKSPACE_RE = re.compile(r"app\.asana\.com/\d+/(\d{6,})/project/")
 
 
 def parse_project_ref(ref: str) -> str:
-    """Accept either a raw project GID or an Asana URL and return the GID."""
+    """Accept either a raw project GID or an Asana URL and return the project GID."""
     ref = ref.strip()
     if GID_RE.match(ref):
         return ref
+    # Try new format first: /1/<workspace>/project/<project_gid>/...
+    m = URL_PROJECT_RE.search(ref)
+    if m:
+        return m.group(1)
+    # Fall back to old format: /0/<project_gid>/list
     m = URL_GID_RE.search(ref)
     if m:
         return m.group(1)
     raise ValueError(
         f"Could not parse Asana project GID from {ref!r}. "
-        f"Expected a numeric GID or an URL like https://app.asana.com/0/<GID>/list."
+        f"Expected a numeric GID or an URL like "
+        f"https://app.asana.com/1/<WORKSPACE>/project/<PROJECT_GID>/list/... or "
+        f"https://app.asana.com/0/<PROJECT_GID>/list."
     )
+
+
+def parse_workspace_from_url(ref: str) -> str | None:
+    """Extract workspace GID from a new-format Asana URL. Returns None if not present."""
+    m = URL_WORKSPACE_RE.search(ref)
+    return m.group(1) if m else None
 
 
 # ── Name normalization for tolerant matching ──────────────────────────────────
@@ -460,6 +478,9 @@ def main():
         print(f"ERROR: {e}", file=sys.stderr)
         sys.exit(1)
 
+    # Try to extract workspace GID from the URL before hitting the API
+    url_workspace = parse_workspace_from_url(args.main) or parse_workspace_from_url(args.ai)
+
     try:
         workspace_gid, workspace_names = discover_workspace(pat)
     except AsanaError as e:
@@ -468,6 +489,10 @@ def main():
             sys.exit(1)
         print(f"ERROR: {e}", file=sys.stderr)
         sys.exit(1)
+
+    # Prefer workspace GID from URL if available (avoids relying on API order)
+    if url_workspace:
+        workspace_gid = url_workspace
 
     values = {
         "ASANA_WORKSPACE_GID": workspace_gid,

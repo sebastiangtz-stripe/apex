@@ -131,14 +131,14 @@ def rows_to_projects(rows: list[list[str]], header: list[str]) -> list[dict]:
 
 
 def filter_by_lead(projects: list[dict], lead_filter: str) -> list[dict]:
-    """Filter projects to those matching the lead filter (first name, case-insensitive)."""
-    first_name = lead_filter.split()[0].lower() if lead_filter else ""
-    if not first_name:
+    """Filter projects to those matching the lead filter (full name, case-insensitive)."""
+    lead_lower = lead_filter.strip().lower() if lead_filter else ""
+    if not lead_lower:
         return projects
     return [
         p for p in projects
         if p.get("project_lead_user_name")
-        and first_name in p["project_lead_user_name"].lower()
+        and lead_lower in p["project_lead_user_name"].lower()
     ]
 
 
