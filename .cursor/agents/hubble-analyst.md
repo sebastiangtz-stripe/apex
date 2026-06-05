@@ -23,21 +23,22 @@ You are the Hubble snapshot + reconciliation worker. Hubble is the single source
 ### 2. Refresh snapshot from Hubble
 
 1. Read `.env` for `HUBBLE_LEAD_FILTER`.
-2. Call `run_hubble_query` with the saved query ID `stripe/c5619e62`.
-   - **CRITICAL: Run the saved query exactly as-is. Never modify, rewrite, append filters to, or reconstruct the SQL.** The query is predetermined and tested — any modification risks timeouts or incorrect results.
-3. From the returned rows, filter locally: keep only rows where `project_lead_user_name` contains `HUBBLE_LEAD_FILTER` (case-insensitive full-name substring match).
-4. Write the filtered results to `data/hubble-snapshot.json` with this schema:
+2. Read the query template from `templates/hubble-query.sql`.
+3. Substitute `{{LEAD_FILTER}}` with the value of `HUBBLE_LEAD_FILTER`. This is the **only** substitution allowed.
+   - **CRITICAL: Never modify, rewrite, or restructure the SQL beyond the `{{LEAD_FILTER}}` substitution.** The template is tested and tuned — any other change risks timeouts or incorrect results. If the user explicitly asks to change the query, update the template file itself (not inline).
+4. Execute the substituted SQL via `run_hubble_query` (pass the full SQL string, not a saved query ID).
+5. Write the returned rows directly to `data/hubble-snapshot.json` with this schema:
    ```json
    {
      "fetched_at": "<ISO timestamp>",
      "lead_filter": "<HUBBLE_LEAD_FILTER value>",
      "source": "hubble_mcp",
-     "saved_query_id": "stripe/c5619e62",
+     "template": "templates/hubble-query.sql",
      "row_count": <int>,
-     "projects": [<filtered rows>]
+     "projects": [<returned rows>]
    }
    ```
-5. Verify: `row_count` should be 25-35 for a typical consultant. If it's 0, the lead filter may not match — include a warning.
+6. Verify: `row_count` should be 25-35 for a typical consultant. If it's 0, the lead filter may not match — include a warning.
 
 **If the query fails** (MCP error, timeout), return an error in the response. Do not retry with modified SQL — report the failure as-is so the user can investigate.
 
@@ -87,4 +88,4 @@ If everything is empty (snapshot fresh, no diffs), return `headline: "Hubble in 
 - **Backfill only on explicit request** (`backfill: true`). Drift detection is non-destructive by default.
 - **Don't return raw snapshot data** in the JSON — the parent doesn't need it. If the parent needs project details, it can read `data/hubble-snapshot.json` directly.
 - **Reconcile is idempotent** — safe to run repeatedly. If you skipped the refresh due to TTL, still run reconcile to surface any drift the previous snapshot already shows.
-- **Never modify the query** — always run saved query `stripe/c5619e62` as-is via `run_hubble_query`. Never append SQL filters, rewrite the query, or construct custom SQL. Filter results locally after retrieval.
+- **Never modify the query beyond `{{LEAD_FILTER}}` substitution** — read `templates/hubble-query.sql`, replace the placeholder, execute. Never append SQL, rewrite joins, add columns, or restructure the template inline. If a query change is needed, the user must explicitly update the template file.
