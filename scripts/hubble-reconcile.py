@@ -204,6 +204,25 @@ def match_hubble_to_local(projects: list[dict], scope: list[Path]) -> tuple[dict
 
 # ── Writers ──
 
+GENERIC_DOMAINS = {"gmail.com", "icloud.com", "hotmail.com", "outlook.com", "yahoo.com", "me.com", "live.com", "aol.com"}
+
+
+def build_email_query_from_contact(email: str, merchant_name: str) -> str:
+    """Construct an Email search query from a contact email address."""
+    if not email or not email.strip():
+        return ""
+    email = email.strip().lower()
+    domain = email.split("@")[-1] if "@" in email else ""
+    if domain and domain not in GENERIC_DOMAINS:
+        return f"from:{domain} OR to:{domain}"
+    clean_name = merchant_name.split("-")[0].split("[")[0].strip() if merchant_name else ""
+    parts = []
+    if clean_name:
+        parts.append(f'from:"{clean_name}"')
+    parts.append(f"from:{email} OR to:{email}")
+    return " OR ".join(parts)
+
+
 def write_hubble_json(slug_dir: Path, row: dict, fetched_at: str, dry_run: bool) -> bool:
     hj = slug_dir / "hubble.json"
     mapping = {
@@ -216,6 +235,7 @@ def write_hubble_json(slug_dir: Path, row: dict, fetched_at: str, dry_run: bool)
         "accelerate_type": row.get("accelerate_type"),
         "project_geography": row.get("project_geography"),
         "stripe_account_ids": row.get("stripe_account_ids"),
+        "primary_contact_email": row.get("primary_contact_email"),
         "last_synced": fetched_at,
     }
     if hj.exists():
@@ -364,8 +384,28 @@ def apply_backfill(slug_dir: Path, row: dict, fetched_at: str, dry_run: bool) ->
         if not existing_ids or existing_ids == "TBD":
             text = field_set_or_insert(text, "Account ID(s)", acct_ids_str)
 
+    # Auto-construct Email search query when TBD and contact email available
+    contact_email = row.get("primary_contact_email")
+    if contact_email:
+        email_search_match = re.search(r"- Email search:\s*(.+)", text)
+        current_query = email_search_match.group(1).strip() if email_search_match else ""
+        if not current_query or current_query == "TBD":
+            query = build_email_query_from_contact(contact_email, row.get("project_name", ""))
+            if query:
+                if email_search_match:
+                    text = text.replace(email_search_match.group(0), f"- Email search: {query}")
+                else:
+                    text = re.sub(
+                        r"(## Communication\s*\n)",
+                        rf"\1\n- Email search: {query}\n",
+                        text,
+                        count=1,
+                    )
+                changes.append("Email search")
+
     if text != original:
-        changes.append("PROJECT.md")
+        if "PROJECT.md" not in changes:
+            changes.append("PROJECT.md")
         if not dry_run:
             pm.write_text(text)
 

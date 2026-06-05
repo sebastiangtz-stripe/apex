@@ -39,6 +39,7 @@ TRAILING_NOISE = re.compile(
 )
 NON_SLUG_CHARS = re.compile(r"[^a-z0-9\-]")
 MULTI_DASH = re.compile(r"-{2,}")
+GENERIC_DOMAINS = {"gmail.com", "icloud.com", "hotmail.com", "outlook.com", "yahoo.com", "me.com", "live.com", "aol.com"}
 
 
 def clean_slug(project_name: str) -> str:
@@ -91,6 +92,7 @@ def main():
             "project_name": name,
             "slug": slug,
             "project_id": proj.get("project_id"),
+            "primary_contact_email": proj.get("primary_contact_email"),
             "already_exists": already_exists,
         })
 
@@ -131,15 +133,30 @@ def main():
         # Minimal PROJECT.md
         project_md = proj_dir / "PROJECT.md"
         if not project_md.exists():
+            merchant_display = r['project_name'].split('-')[0].split('[')[0].strip()
+            contact_email = r.get("primary_contact_email", "")
+            email_query = "TBD"
+            if contact_email:
+                domain = contact_email.split("@")[-1] if "@" in contact_email else ""
+                if domain and domain not in GENERIC_DOMAINS:
+                    email_query = f"from:{domain} OR to:{domain}"
+                else:
+                    parts = []
+                    if merchant_display:
+                        parts.append(f'from:"{merchant_display}"')
+                    parts.append(f"from:{contact_email} OR to:{contact_email}")
+                    email_query = " OR ".join(parts)
+
             project_md.write_text(
-                f"# {r['project_name'].split('-')[0].split('[')[0].strip()}\n\n"
+                f"# {merchant_display}\n\n"
                 f"**Status**: Discovery\n"
                 f"**Priority**: Medium\n"
                 f"**Hubble Project ID**: {r['project_id']}\n"
                 f"**Account ID**: TBD\n\n"
-                f"## Key Contacts\n\nTBD\n\n"
+                f"## Key Contacts\n\n"
+                f"{contact_email if contact_email else 'TBD'}\n\n"
                 f"## Communication\n\n"
-                f"- Email search: TBD\n"
+                f"- Email search: {email_query}\n"
                 f"- Slack channels: TBD\n\n"
                 f"## External Links\n\n"
                 f"- Handover: TBD\n"
