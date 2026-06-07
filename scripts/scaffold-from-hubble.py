@@ -161,7 +161,7 @@ def main():
                 f"## Key Contacts\n\n"
                 f"{contacts_section}\n\n"
                 f"## Communication\n\n"
-                f"- **Scan source**: managed\n"
+                f"- **Scan source**: core\n"
                 f"- **Email search**: {email_query}\n"
                 f"- **Slack channels**: TBD\n\n"
                 f"## External Links\n\n"

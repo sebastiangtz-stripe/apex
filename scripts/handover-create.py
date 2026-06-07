@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 """
-Create a merchant project from a parsed handover proposal.
+Create or update a merchant project from a parsed handover proposal.
 
 Reads a proposal JSON (from handover-parse.py) and:
   1. Creates projects/active/<slug>/ with PROJECT.md + empty action-items.md
@@ -10,8 +10,14 @@ Reads a proposal JSON (from handover-parse.py) and:
   3. Chains to hubble-reconcile.py --backfill to populate SF + Kantata links.
   4. Appends the thread to data/handover-state.json so re-scans dedup.
 
+With --update-existing: patches an existing project with handover data
+(contacts, links, scan_source → core) without overwriting Hubble-populated
+fields. Use when a project was scaffolded from Hubble and handover data is
+found afterward.
+
 Usage:
   python3 scripts/handover-create.py --proposal proposal.json
+  python3 scripts/handover-create.py --proposal-stdin --update-existing
   cat proposal.json | python3 scripts/handover-create.py --proposal-stdin
 
 Exit codes:
@@ -22,6 +28,7 @@ Exit codes:
      retry will re-attempt
   3  filesystem error (e.g. couldn't write PROJECT.md)
   4  proposal is missing required fields (merchant_name, slug, thread_permalink)
+  5  slug not found (--update-existing on a non-existent project)
 """
 
 import argparse
@@ -215,6 +222,233 @@ def append_processed(proposal: dict) -> None:
         save_state(state)
 
 
+# ── PROJECT.md patch helpers (for --update-existing) ─────────────────────────
+
+
+def _extract_field(text: str, key: str) -> str:
+    """Extract current value of `- **Key**: value` from PROJECT.md text."""
+    import re as _re
+    m = _re.search(rf"- \*\*{_re.escape(key)}\*\*:\s*(.+)", text)
+    return m.group(1).strip() if m else ""
+
+
+def _patch_field(text: str, key: str, value: str) -> str:
+    """Replace `- **Key**: <old>` with `- **Key**: <value>`. No-op if key not found."""
+    import re as _re
+    pattern = rf"(- \*\*{_re.escape(key)}\*\*:\s*)(.*)"
+    if _re.search(pattern, text):
+        return _re.sub(pattern, lambda m: f"{m.group(1)}{value}", text, count=1)
+    return text
+
+
+def _upsert_external_link(text: str, label: str, url: str) -> str:
+    """Ensure a `- Label: url` line exists under '## External Links'."""
+    import re as _re
+    lines = text.splitlines()
+    in_section = False
+    section_start = None
+    section_end = None
+    existing_idx = None
+    for i, line in enumerate(lines):
+        if _re.match(r"^## External Links", line, _re.I):
+            in_section = True
+            section_start = i
+            continue
+        if in_section and line.startswith("## "):
+            section_end = i
+            break
+        if in_section and _re.match(rf"^- {_re.escape(label)}\s*:", line):
+            existing_idx = i
+
+    if section_start is None:
+        return text
+    if section_end is None:
+        section_end = len(lines)
+
+    new_line = f"- {label}: {url}"
+    if existing_idx is not None:
+        lines[existing_idx] = new_line
+    else:
+        insert_at = section_start + 1
+        for i in range(section_start + 1, section_end):
+            if lines[i].startswith("- "):
+                insert_at = i + 1
+        lines.insert(insert_at, new_line)
+
+    return "\n".join(lines) + ("\n" if text.endswith("\n") else "")
+
+
+def _upsert_key_contact(text: str, contact: dict) -> str:
+    """Merge a contact into the ## Key Contacts section."""
+    import re as _re
+    name = contact.get("name", "")
+    email = contact.get("email", "")
+    contact_line = f"- {name} — {email}" if name else f"- {email} — merchant contact (from handover)"
+
+    lines = text.splitlines()
+    in_section = False
+    section_start = None
+    section_end = None
+    for i, line in enumerate(lines):
+        if _re.match(r"^## Key Contacts", line, _re.I):
+            in_section = True
+            section_start = i
+            continue
+        if in_section and line.startswith("## "):
+            section_end = i
+            break
+    if section_start is None:
+        return text
+    if section_end is None:
+        section_end = len(lines)
+
+    body_lines = lines[section_start + 1:section_end]
+    body_text = "\n".join(body_lines).strip()
+
+    if body_text == "TBD" or not body_text:
+        lines[section_start + 1:section_end] = [contact_line, ""]
+    else:
+        insert_at = section_end
+        for i in range(section_start + 1, section_end):
+            if lines[i].startswith("- "):
+                insert_at = i + 1
+        lines.insert(insert_at, contact_line)
+
+    return "\n".join(lines) + ("\n" if text.endswith("\n") else "")
+
+
+# ── Update existing project ──────────────────────────────────────────────────
+
+
+def update_existing(proposal: dict) -> dict:
+    """Patch an existing project with handover data (contacts, links, scan_source)."""
+    slug = proposal.get("slug")
+    if not slug:
+        return {"ok": False, "exit": 4, "error": "Missing slug in proposal"}
+
+    target = ACTIVE_DIR / slug
+    if not target.exists():
+        return {"ok": False, "exit": 5,
+                "error": f"Slug not found: {slug}"}
+
+    project_md = target / "PROJECT.md"
+    if not project_md.exists():
+        return {"ok": False, "exit": 5,
+                "error": f"No PROJECT.md in {slug}"}
+
+    try:
+        text = project_md.read_text()
+        changes = []
+
+        # 1. Patch scan_source → core (always)
+        text = _patch_field(text, "Scan source", "core")
+        changes.append("scan_source→core")
+
+        # 2. Merge primary_contact into Key Contacts
+        contact = proposal.get("primary_contact")
+        if contact and contact.get("email"):
+            if contact["email"].lower() not in text.lower():
+                text = _upsert_key_contact(text, contact)
+                changes.append("contact")
+
+        # 3. Upsert Handover permalink
+        permalink = proposal.get("thread_permalink")
+        if permalink:
+            text = _upsert_external_link(text, "Handover", permalink)
+            changes.append("handover_link")
+
+        # 4. Upsert Manifest URL if present
+        manifest = proposal.get("manifest_url")
+        if manifest:
+            text = _upsert_external_link(text, "Manifest", manifest)
+            changes.append("manifest_link")
+
+        # 5. Patch Products if currently TBD
+        products = proposal.get("products_hint")
+        if products and products != "TBD":
+            current_products = _extract_field(text, "Products")
+            if not current_products or current_products == "TBD":
+                text = _patch_field(text, "Products", products)
+                changes.append("products")
+
+        # 6. Patch SFDC Opportunity Owner if currently TBD
+        ae = proposal.get("ae")
+        if ae and ae != "TBD":
+            current_ae = _extract_field(text, "SFDC Opportunity Owner")
+            if not current_ae or current_ae == "TBD":
+                text = _patch_field(text, "SFDC Opportunity Owner", ae)
+                changes.append("ae")
+
+        # 7. Update email search if currently TBD and contact available
+        if contact and contact.get("email"):
+            current_email_search = _extract_field(text, "Email search")
+            if not current_email_search or current_email_search == "TBD":
+                query = email_search_query(contact)
+                if query != "TBD":
+                    text = _patch_field(text, "Email search", query)
+                    changes.append("email_search")
+
+        project_md.write_text(text)
+
+        # 8. Append timeline entry
+        timeline_path = target / "timeline.md"
+        if timeline_path.exists():
+            existing = timeline_path.read_text()
+        else:
+            existing = f"# Timeline — {proposal.get('merchant_name', slug)}\n"
+        ae_label = proposal.get("ae", "unknown")
+        entry = (
+            f"\n## {today_iso()} — Handover data merged\n"
+            f"- Source: {proposal.get('thread_permalink', 'unknown')}\n"
+            f"- AE: @{ae_label}\n"
+            f"- Updated via handover-create.py --update-existing\n"
+        )
+        timeline_path.write_text(existing + entry)
+
+        # 9. Append handover content to raw/comms.md
+        comms_path = target / "raw" / "comms.md"
+        if comms_path.exists():
+            comms_text = comms_path.read_text()
+        else:
+            (target / "raw").mkdir(exist_ok=True)
+            comms_text = f"# Raw Comms — {proposal.get('merchant_name', slug)}\n"
+        comms_entry = (
+            f"\n## [{today_iso()}] — slack — Handover thread\n"
+            f"**From**: @{ae_label}\n"
+            f"**Permalink**: {proposal.get('thread_permalink', '')}\n"
+            f"**Direction**: Inbound\n"
+            f"**Summary**: _pending_\n"
+            f"\n---\n"
+        )
+        comms_path.write_text(comms_text + comms_entry)
+
+    except OSError as e:
+        return {"ok": False, "exit": 3, "error": f"Filesystem error: {e}"}
+
+    # 10. Chain hubble-reconcile --backfill (enriches further)
+    hubble_ok, hubble_msg = _chain(
+        ["python3", str(WORKSPACE_ROOT / "scripts" / "hubble-reconcile.py"),
+         "--backfill", "--slug", slug],
+        "hubble-reconcile",
+    )
+
+    # 11. Do NOT chain sync-to-asana (task already exists from scaffold)
+
+    # 12. Append to handover-state.json (dedup future scans)
+    append_processed(proposal)
+
+    return {
+        "ok": True,
+        "exit": 0,
+        "slug": slug,
+        "merchant_name": proposal.get("merchant_name", slug),
+        "updated": True,
+        "changes": changes,
+        "hubble_backfill": "ok" if hubble_ok else f"skipped ({hubble_msg})",
+        "folder": str(target.relative_to(WORKSPACE_ROOT)),
+    }
+
+
 # ── Bootstrap one proposal ────────────────────────────────────────────────────
 
 REQUIRED = ["merchant_name", "slug", "thread_permalink"]
@@ -309,6 +543,8 @@ def main():
                      help="Read a single proposal JSON from stdin.")
     grp.add_argument("--proposals-stdin", action="store_true",
                      help="Read a JSON array of proposals from stdin.")
+    ap.add_argument("--update-existing", action="store_true",
+                    help="Patch existing project with handover data instead of creating new.")
     args = ap.parse_args()
 
     if args.proposal:
@@ -321,7 +557,10 @@ def main():
             print("ERROR: --proposals-stdin expects a JSON array.", file=sys.stderr)
             sys.exit(2)
 
-    results = [bootstrap(p) for p in proposals]
+    if args.update_existing:
+        results = [update_existing(p) for p in proposals]
+    else:
+        results = [bootstrap(p) for p in proposals]
     worst_exit = max((r.get("exit", 0) for r in results), default=0)
     print(json.dumps(results, indent=2))
     sys.exit(worst_exit)

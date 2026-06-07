@@ -113,7 +113,14 @@ From the parsed snippet, resolve everything automatically:
 
 4. **Slack handle** — from snippet. Write to `SLACK_HANDLE`.
 
-5. **Handover channel** — hardcoded for AMER. Write
+5. **Consultant username** — write `CONSULTANT_USERNAME=<handle>` (same value
+   as SLACK_HANDLE). The CS query template (`templates/cs-incremental.sql`)
+   appends `@stripe.com` itself and uses exact-match on `assignee_email`.
+   Note: If the user's Slack handle differs from their Stripe LDAP username
+   (rare — mainly contractor accounts), they should override
+   CONSULTANT_USERNAME with the LDAP handle instead.
+
+6. **Handover channel** — hardcoded for AMER. Write
    `HANDOVER_CHANNEL_ID=C02HZETBG75` automatically.
 
 6. **Workspace GID** — if the board URL uses the new format
@@ -199,7 +206,7 @@ Options: `Yes` / `Not now`
 - **Yes** — invoke `/hubble-analyst`. Then scaffold projects in this exact order:
   1. Run `python3 scripts/scaffold-from-hubble.py --apply` to create all folders + PROJECT.md with Email search and Key Contacts pre-filled from Hubble contacts.
   2. Run `python3 scripts/hubble-reconcile.py --backfill` to populate External Links, AONR, dates, and any remaining contact fields.
-  3. For each new project, search the handover channel (`HANDOVER_CHANNEL_ID`) by merchant name or AE name. If a thread is found, parse it via `scripts/handover-parse.py` to extract contacts and populate Key Contacts + Handover link.
+  3. For each new project, search the handover channel (`HANDOVER_CHANNEL_ID`) by merchant name or AE name. If a thread is found, parse it via `scripts/handover-parse.py` to get a proposal JSON, then run `python3 scripts/handover-create.py --proposal-stdin --update-existing` to merge contacts, Handover permalink, and set `scan_source: core`.
   4. Run `python3 scripts/sync-to-asana.py` to create Asana tasks — **only after** steps 1-3 so descriptions are fully populated.
   Confirm each batch before proceeding (don't run all 4 steps silently).
 - **Not now** — exit cleanly.
