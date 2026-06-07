@@ -103,6 +103,7 @@ Interpret intent, not rigid commands. Key mappings:
 | "Show me all #[tag] items" / "Batch my emails" | Read Asana subtasks, filter by tag prefix in name, grouped by parent task |
 | "Draft an email for [merchant] about [topic]" | Read context, research if needed, draft to `drafts/<topic>.md` |
 | "Archive [merchant]" / "[merchant] is live" | Complete Asana task, move to `archive/`, update INDEX.md |
+| "Find handovers" / "backfill handovers" / "search for handover threads" | Invoke `handover-bootstrap` skill (backfill mode). Runs `handover-search.py` → parallel Slack searches → `handover-create.py --update-existing`. |
 
 ### Issue Investigation
 

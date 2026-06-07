@@ -6,9 +6,11 @@ description: >-
   (HO/MAN/contact pre-filled), creates the Asana task, backfills Hubble,
   and updates handover-state.json. Use when the user pastes a Slack
   handover permalink or thread text, says "here's a handover", "new
-  handover from Slack", "set up project from handover", "/handover", or
+  handover from Slack", "set up project from handover", "/handover",
   when scan-review Phase 0 surfaces unprocessed handovers from the
-  handover-scanner subagent.
+  handover-scanner subagent, OR when the user says "find handovers",
+  "backfill handovers", "search for handover threads" (batch backfill
+  mode for Hubble-scaffolded projects).
 ---
 
 # Handover Bootstrap
@@ -122,6 +124,127 @@ End with one block:
 
 If any proposals were skipped or errored, list them separately under
 `Skipped` / `Errors`.
+
+---
+
+## Backfill Mode
+
+Third entry point for finding handover threads for projects that were already
+scaffolded from Hubble (via `scaffold-from-hubble.py`). These projects have
+`Handover: TBD` and missing contacts from the Slack thread.
+
+### When to invoke
+
+- User says: "find handovers", "backfill handovers", "search for handover
+  threads", or "find handover threads for all projects"
+- After `scaffold-from-hubble.py --apply` completes (step 2 in its output)
+- During initial workspace setup when projects exist but lack handover data
+
+### Phase B1 — Prepare search manifest
+
+Run `python3 scripts/handover-search.py` and parse the JSON output.
+
+If `searches` is empty, surface: "All projects already have handover links
+or are in processed_threads. Nothing to search." — then stop.
+
+Otherwise surface: "Searching for handover threads for N projects (M skipped).
+Firing N×2 Slack searches."
+
+### Phase B2 — Execute parallel searches
+
+For each entry in the manifest's `searches` array, fire **two**
+`search_slack_messages` calls in parallel:
+
+```
+Step 1: search_slack_messages(query="{project_name} in:{channel_name}", count=5, sort="timestamp")
+Step 2: search_slack_messages(query="{ae_handle} in:{channel_name}", count=10, sort="timestamp")
+```
+
+If `ae_handle` is null for an entry, skip step 2 for that project.
+
+**Batching**: fire up to 10 projects per message (up to 20 MCP calls). Wait
+for results before the next batch.
+
+**Critical**: Always use the channel **name** (from manifest's `channel_name`)
+in `search_slack_messages` queries, never the channel ID. The `in:` filter
+requires the human-readable channel name. The channel ID is only for
+`read_slack_message_thread`.
+
+### Phase B3 — Evaluate results
+
+For each project:
+
+1. **Step 1 hit** → take the first result's `thread_ts`. Read the full thread
+   via `read_slack_message_thread(channel={channel_id}, thread_ts={thread_ts})`.
+   Confirm the thread mentions the merchant name (case-insensitive substring).
+   If confirmed → proceed to proposal building.
+
+2. **Step 1 miss, Step 2 hit** → Step 2 may return threads for multiple
+   merchants (same AE). For each returned thread, read it and check if the
+   content matches this project's `project_name` (substring or fuzzy match).
+   First confirmed match wins → proceed to proposal building.
+
+3. **Both miss** → mark as "handover not found". No retry — move on.
+
+### Phase B4 — Build proposals and apply
+
+For each confirmed thread, build a proposal JSON:
+
+```json
+{
+  "slug": "<slug>",
+  "merchant_name": "<from PROJECT.md H1 title>",
+  "thread_permalink": "https://stripe.slack.com/archives/{channel_id}/p{thread_ts_no_dot}",
+  "channel_id": "<from manifest>",
+  "thread_ts": "<from search result>",
+  "primary_contact": { "name": "...", "email": "..." },
+  "ae": "<ae_handle or ae_display_name>",
+  "products_hint": "<from thread content if parseable, else null>",
+  "manifest_url": "<from thread content if present, else null>"
+}
+```
+
+Extract `primary_contact`, `products_hint`, and `manifest_url` from the thread
+content. Look for patterns like:
+- Contact: `Name - user@company` or `Name (user@company)`
+- Manifest: URL containing `account-manifest` or `admin.corp.stripe.com`
+- Products: text after "products:" or in bracket notation `[Connect; Billing]`
+
+If extraction is uncertain, leave fields as null — `handover-create.py` handles
+missing fields gracefully.
+
+Pipe all proposals as a JSON array to:
+
+```bash
+echo '<json_array>' | python3 scripts/handover-create.py --proposals-stdin --update-existing
+```
+
+Handle exit codes per the standard table (0=clean, 5=slug not found, etc.).
+
+### Phase B5 — Update ae-handles.json
+
+For any project where Step 2 (AE handle search) **contributed** to finding
+the thread (i.e., Step 1 missed but Step 2 hit), read `data/ae-handles.json`,
+add `{"<ae_display_name>": "<ae_handle>"}`, and write it back. This grows the
+confirmed-handle lookup for future runs.
+
+### Phase B6 — Summary
+
+```
+## Handover backfill — <date>
+
+Found: N/M threads matched
+- <slug> — thread by @<ae>, <thread_date>
+- <slug> — thread by @<ae>, <thread_date>
+
+Not found (N):
+- <slug> — no results for name or AE handle
+
+Skipped (N):
+- <slug> — already has handover link
+```
+
+---
 
 ## Hard rules
 
