@@ -246,6 +246,13 @@ def bootstrap(proposal: dict) -> dict:
     except OSError as e:
         return {"ok": False, "exit": 3, "error": f"Filesystem error: {e}"}
 
+    # Hubble backfill BEFORE Asana so the task description has SF/Kantata links
+    hubble_ok, hubble_msg = _chain(
+        ["python3", str(WORKSPACE_ROOT / "scripts" / "hubble-reconcile.py"),
+         "--backfill", "--slug", slug],
+        "hubble-reconcile",
+    )
+
     asana_ok, asana_msg = _chain(
         ["python3", str(WORKSPACE_ROOT / "scripts" / "sync-to-asana.py"),
          "--slug", slug],
@@ -255,12 +262,6 @@ def bootstrap(proposal: dict) -> dict:
         return {"ok": False, "exit": 2,
                 "error": f"Asana sync failed: {asana_msg}",
                 "folder": str(target.relative_to(WORKSPACE_ROOT))}
-
-    hubble_ok, hubble_msg = _chain(
-        ["python3", str(WORKSPACE_ROOT / "scripts" / "hubble-reconcile.py"),
-         "--backfill", "--slug", slug],
-        "hubble-reconcile",
-    )
 
     append_processed(proposal)
 
