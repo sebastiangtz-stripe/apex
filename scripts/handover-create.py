@@ -125,6 +125,7 @@ def render_project_md(proposal: dict) -> str:
 {contacts_block}
 
 ## Communication
+- **Scan source**: core
 - **Email search**: {email_q}
 - **Slack channels**: TBD
 - **Stripe contacts**: @{ae if ae != "TBD" else "TBD"}
@@ -163,7 +164,9 @@ def render_scan_state() -> str:
         {
             "last_email_scan": None,
             "last_slack_scan": None,
+            "last_cs_scan": None,
             "logged_email_ids": [],
+            "logged_cs_message_ids": [],
             "logged_slack_thread_ids": [],
         },
         indent=2,

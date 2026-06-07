@@ -97,7 +97,14 @@ From the parsed snippet, resolve everything automatically:
 
 2. **Full name** — look up the Slack handle via Home internal search
    (`execute_internal_search` with `filter_types: ["person"]`). Extract the
-   `title` field from the result. This becomes `HUBBLE_LEAD_FILTER`.
+   `title` field from the result.
+   - **ASCII-normalize before writing**: Home returns display names with
+     diacritics (e.g. "Sebastián Gutiérrez") but Hubble stores names in ASCII
+     (e.g. "Sebastian Gutierrez"). Strip accents via
+     `from scripts.lib import ascii_normalize` (or inline:
+     `unicodedata.normalize('NFD', name).encode('ascii', 'ignore').decode()`)
+     before writing to `HUBBLE_LEAD_FILTER`.
+   - This becomes `HUBBLE_LEAD_FILTER`.
    - If the lookup fails (no result, MCP error), fall back to asking: "What's
      your full name as it appears in Hubble / the Stripe directory?"
 

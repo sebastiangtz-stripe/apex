@@ -2,7 +2,8 @@
 -- Source of truth for project roster, AONR, dates, AE, SFDC/Kantata links.
 --
 -- SUBSTITUTION: {{LEAD_FILTER}} is replaced with the consultant's full name
--- from HUBBLE_LEAD_FILTER before execution. No other modifications allowed.
+-- (ASCII-normalized, no diacritics) from HUBBLE_LEAD_FILTER before execution.
+-- No other modifications allowed.
 --
 -- To run: hubble-analyst reads this template, substitutes {{LEAD_FILTER}},
 -- and executes via run_hubble_query MCP. The query must never be modified
@@ -79,5 +80,5 @@ WHERE
   AND p.project_status = 'In Progress'
   AND p.project_geography = 'AMER'
   AND at.accelerate_type = 'Accelerate 2.0'
-  AND p.project_lead_user_name ILIKE '%{{LEAD_FILTER}}%'
+  AND LOWER(p.project_lead_user_name) LIKE LOWER('%{{LEAD_FILTER}}%')
 ORDER BY days_since_last_health_report DESC

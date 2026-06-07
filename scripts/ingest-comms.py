@@ -34,6 +34,7 @@ from lib import (
     GENERIC_DOMAINS,
     WORKSPACE_ROOT,
     PROJECTS_DIR,
+    cross_source_match,
     emails_in,
     is_automated,
     is_outbound,
@@ -53,6 +54,10 @@ OUTBOUND_ADDRESSES = {
     for a in ENV.get("MY_OUTBOUND_ADDRESSES", "").split(",")
     if a.strip()
 }
+
+# Batch-level cross-source dedup: populated by CS staging files, checked by Gmail files.
+# Keyed by slug → list of {from, date, subject} dicts from CS messages ingested this run.
+_cs_batch_index = {}
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────
@@ -119,7 +124,9 @@ def load_scan_state(slug):
     return {
         "last_email_scan": None,
         "last_slack_scan": None,
+        "last_cs_scan": None,
         "logged_email_ids": [],
+        "logged_cs_message_ids": [],
         "logged_slack_thread_ids": [],
     }
 
@@ -400,13 +407,17 @@ def ingest_staging_file(staging_path, dry_run=False):
     """Process one staging JSON file. Returns a per-merchant result dict."""
     data = json.loads(staging_path.read_text())
     slug = data["slug"]
+    source = data.get("source", "gmail")
 
     result = {
         "slug": slug,
+        "source": source,
         "new_emails": 0,
+        "new_cs_emails": 0,
         "new_slack_threads": 0,
         "outbound_emails": 0,
         "inbound_emails": 0,
+        "cross_source_deduped": 0,
         "contacts_added": [],
         "quarantined": 0,
         "errors": [],
@@ -421,6 +432,7 @@ def ingest_staging_file(staging_path, dry_run=False):
     # Load scan state for dedup
     state = load_scan_state(slug)
     logged_email_ids = set(state.get("logged_email_ids", []))
+    logged_cs_ids = set(state.get("logged_cs_message_ids", []))
     logged_slack_ids = set(state.get("logged_slack_thread_ids", []))
 
     # Message-level Slack tracking (backward-compat: migrate from flat list)
@@ -433,64 +445,143 @@ def ingest_staging_file(staging_path, dry_run=False):
 
     # ── Process emails ─────────────────────────────────────────────────
     for email in data.get("emails", []):
-        msg_id = email.get("message_id", "")
-        if not msg_id:
-            result["errors"].append(f"Email missing message_id: {email.get('subject', '?')}")
-            continue
-
-        # Dedup
-        if msg_id in logged_email_ids:
-            continue
-
-        # Identity gate
         from_field = email.get("from", "")
         to_field = email.get("to", "")
-        participants = emails_in(from_field) + emails_in(to_field)
+        cc_field = email.get("cc", "")
+        participants = emails_in(from_field) + emails_in(to_field) + emails_in(cc_field)
         non_auto_participants = [p for p in participants if not is_automated(p)]
 
-        if not any(matches_merchant(p, identity) for p in non_auto_participants):
-            quarantine_entry(slug, {
+        if source == "case_studio":
+            # ── CS path: dedup by sfdc_id, hybrid direction ────────────
+            sfdc_id = email.get("sfdc_id", "")
+            if not sfdc_id:
+                result["errors"].append(f"CS email missing sfdc_id: {email.get('subject', '?')}")
+                continue
+
+            if sfdc_id in logged_cs_ids:
+                continue
+
+            # Identity gate
+            if not any(matches_merchant(p, identity) for p in non_auto_participants):
+                quarantine_entry(slug, {
+                    "date": email.get("date", ""),
+                    "subject": email.get("subject", ""),
+                    "from": from_field,
+                    "to": to_field,
+                    "message_id": sfdc_id,
+                }, "no participant matches merchant identity model", dry_run)
+                logged_cs_ids.add(sfdc_id)
+                result["quarantined"] += 1
+                continue
+
+            # Hybrid direction detection
+            if not email.get("is_incoming"):
+                direction = "Outbound"
+            elif is_outbound(from_field, OUTBOUND_ADDRESSES):
+                direction = "Outbound"
+            else:
+                direction = "Inbound"
+
+            if direction == "Outbound":
+                result["outbound_emails"] += 1
+            else:
+                result["inbound_emails"] += 1
+
+            # Format and write
+            entry = format_email_entry(email, direction)
+            append_to_comms(slug, entry, dry_run)
+
+            date_str = parse_date_from_email(email.get("date", ""))
+            timeline = format_timeline_entry(
+                date_str=date_str,
+                comm_type="email (CS)",
+                subject=email.get("subject", "No Subject"),
+                direction=direction,
+                from_field=from_field,
+                to_field=to_field,
+                url="",
+                msg_id=sfdc_id,
+                participants=[extract_name(from_field)] + [extract_name(to_field)],
+            )
+            prepend_to_timeline(slug, timeline, dry_run)
+
+            logged_cs_ids.add(sfdc_id)
+            all_new_addresses.update(non_auto_participants)
+            result["new_cs_emails"] += 1
+
+            # Register in batch index for cross-source dedup
+            _cs_batch_index.setdefault(slug, []).append({
+                "from": from_field,
                 "date": email.get("date", ""),
                 "subject": email.get("subject", ""),
-                "from": from_field,
-                "to": to_field,
-                "message_id": msg_id,
-            }, "no participant matches merchant identity model", dry_run)
-            logged_email_ids.add(msg_id)
-            result["quarantined"] += 1
-            continue
+            })
 
-        # Determine direction
-        outbound = is_outbound(from_field, OUTBOUND_ADDRESSES)
-        direction = "Outbound" if outbound else "Inbound"
-        if outbound:
-            result["outbound_emails"] += 1
         else:
-            result["inbound_emails"] += 1
+            # ── Gmail path: dedup by message_id, cross-source check ────
+            msg_id = email.get("message_id", "")
+            if not msg_id:
+                result["errors"].append(f"Email missing message_id: {email.get('subject', '?')}")
+                continue
 
-        # Format and write comms.md entry
-        entry = format_email_entry(email, direction)
-        append_to_comms(slug, entry, dry_run)
+            if msg_id in logged_email_ids:
+                continue
 
-        # Format and write timeline entry
-        date_str = parse_date_from_email(email.get("date", ""))
-        timeline = format_timeline_entry(
-            date_str=date_str,
-            comm_type="email",
-            subject=email.get("subject", "No Subject"),
-            direction=direction,
-            from_field=from_field,
-            to_field=to_field,
-            url=email.get("url", ""),
-            msg_id=msg_id,
-            participants=[extract_name(from_field)] + [extract_name(to_field)],
-        )
-        prepend_to_timeline(slug, timeline, dry_run)
+            # Cross-source dedup: skip if CS already ingested this message
+            if identity.get("scan_source") == "core" and slug in _cs_batch_index:
+                gmail_fingerprint = {
+                    "from": from_field,
+                    "date": email.get("date", ""),
+                    "subject": email.get("subject", ""),
+                }
+                if any(cross_source_match(cs_fp, gmail_fingerprint) for cs_fp in _cs_batch_index[slug]):
+                    logged_email_ids.add(msg_id)
+                    result["cross_source_deduped"] += 1
+                    continue
 
-        # Track for dedup + contact discovery
-        logged_email_ids.add(msg_id)
-        all_new_addresses.update(non_auto_participants)
-        result["new_emails"] += 1
+            # Identity gate
+            if not any(matches_merchant(p, identity) for p in non_auto_participants):
+                quarantine_entry(slug, {
+                    "date": email.get("date", ""),
+                    "subject": email.get("subject", ""),
+                    "from": from_field,
+                    "to": to_field,
+                    "message_id": msg_id,
+                }, "no participant matches merchant identity model", dry_run)
+                logged_email_ids.add(msg_id)
+                result["quarantined"] += 1
+                continue
+
+            # Determine direction
+            outbound = is_outbound(from_field, OUTBOUND_ADDRESSES)
+            direction = "Outbound" if outbound else "Inbound"
+            if outbound:
+                result["outbound_emails"] += 1
+            else:
+                result["inbound_emails"] += 1
+
+            # Format and write comms.md entry
+            entry = format_email_entry(email, direction)
+            append_to_comms(slug, entry, dry_run)
+
+            # Format and write timeline entry
+            date_str = parse_date_from_email(email.get("date", ""))
+            timeline = format_timeline_entry(
+                date_str=date_str,
+                comm_type="email",
+                subject=email.get("subject", "No Subject"),
+                direction=direction,
+                from_field=from_field,
+                to_field=to_field,
+                url=email.get("url", ""),
+                msg_id=msg_id,
+                participants=[extract_name(from_field)] + [extract_name(to_field)],
+            )
+            prepend_to_timeline(slug, timeline, dry_run)
+
+            # Track for dedup + contact discovery
+            logged_email_ids.add(msg_id)
+            all_new_addresses.update(non_auto_participants)
+            result["new_emails"] += 1
 
     # ── Process Slack threads ──────────────────────────────────────────
     for thread in data.get("slack_threads", []):
@@ -575,12 +666,16 @@ def ingest_staging_file(staging_path, dry_run=False):
 
     # ── Update scan-state ──────────────────────────────────────────────
     state["logged_email_ids"] = sorted(logged_email_ids)
+    state["logged_cs_message_ids"] = sorted(logged_cs_ids)
     state["logged_slack_thread_ids"] = sorted(logged_slack_ids)
     state["slack_thread_state"] = slack_thread_state
     now = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
     if data.get("emails") is not None:
-        state["last_email_scan"] = now
-    if data.get("slack_threads") is not None:
+        if source == "case_studio":
+            state["last_cs_scan"] = now
+        else:
+            state["last_email_scan"] = now
+    if data.get("slack_threads") is not None and source != "case_studio":
         state["last_slack_scan"] = now
     save_scan_state(slug, state, dry_run)
 
@@ -615,6 +710,9 @@ def main():
         print(json.dumps(report, indent=2))
         sys.exit(0)
 
+    # Sort: CS files (*-cs.json) first so cross-source dedup works correctly
+    staging_files.sort(key=lambda f: (0 if f.stem.endswith("-cs") else 1, f.name))
+
     results = []
     total_written = 0
     total_quarantined = 0
@@ -626,11 +724,13 @@ def main():
         try:
             result = ingest_staging_file(sf, dry_run=args.dry_run)
             results.append(result)
-            written = result["new_emails"] + result["new_slack_threads"]
+            written = result["new_emails"] + result.get("new_cs_emails", 0) + result["new_slack_threads"]
             total_written += written
             total_quarantined += result["quarantined"]
-            print(f"  → {result['new_emails']} emails, {result['new_slack_threads']} slack, "
-                  f"{result['quarantined']} quarantined, {len(result['contacts_added'])} contacts added")
+            cs_label = f", {result['new_cs_emails']} CS" if result.get("new_cs_emails") else ""
+            dedup_label = f", {result['cross_source_deduped']} cross-deduped" if result.get("cross_source_deduped") else ""
+            print(f"  → {result['new_emails']} emails{cs_label}, {result['new_slack_threads']} slack, "
+                  f"{result['quarantined']} quarantined{dedup_label}, {len(result['contacts_added'])} contacts added")
             if result["errors"]:
                 for err in result["errors"]:
                     print(f"  ⚠ {err}")
