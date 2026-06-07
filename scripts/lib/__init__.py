@@ -7,6 +7,7 @@ contact-gap-audit.py, and apply-proposals.py all use the same logic.
 """
 
 import re
+import unicodedata
 from pathlib import Path
 
 WORKSPACE_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -69,6 +70,17 @@ def load_env(env_file=None):
     return env
 
 
+# ── Text normalization ─────────────────────────────────────────────────────
+
+def ascii_normalize(name):
+    """Strip diacritics/accents from a string, returning ASCII-only text.
+
+    Used by setup to convert Home display names (e.g. "Sebastián Gutiérrez")
+    to the ASCII form Hubble stores (e.g. "Sebastian Gutierrez").
+    """
+    return unicodedata.normalize("NFD", name).encode("ascii", "ignore").decode()
+
+
 # ── Email / Identity helpers ───────────────────────────────────────────────
 
 def emails_in(text):
@@ -123,7 +135,7 @@ def parse_project(slug, projects_dir=None):
     """Extract the merchant identity model from PROJECT.md.
 
     Returns dict with: slug, name, domains, explicit_addresses,
-    key_contact_addresses, name_tokens. Returns None if PROJECT.md missing.
+    key_contact_addresses, name_tokens, scan_source. Returns None if PROJECT.md missing.
     """
     base = Path(projects_dir) if projects_dir else PROJECTS_DIR
     path = base / slug / "PROJECT.md"
@@ -135,6 +147,7 @@ def parse_project(slug, projects_dir=None):
 
     in_comm = False
     email_query = ""
+    scan_source = "managed"
     in_key_contacts = False
     key_contact_addresses = set()
     for line in lines:
@@ -154,6 +167,9 @@ def parse_project(slug, projects_dir=None):
             m = re.match(r"-\s*\*\*Email search\*\*:\s*(.+)$", line)
             if m:
                 email_query += " " + m.group(1)
+            m = re.match(r"-\s*\*\*Scan source\*\*:\s*(.+)$", line)
+            if m:
+                scan_source = m.group(1).strip().lower()
         if in_key_contacts:
             for addr in emails_in(line):
                 key_contact_addresses.add(addr)
@@ -169,7 +185,68 @@ def parse_project(slug, projects_dir=None):
         "key_contact_addresses": key_contact_addresses,
         "name_tokens": name_tokens,
         "email_query_raw": email_query.strip(),
+        "scan_source": scan_source,
     }
+
+
+# ── Cross-source dedup ────────────────────────────────────────────────────
+
+CS_DEDUP_WINDOW_SECONDS = 60
+
+
+def cross_source_match(cs_msg, gmail_msg, window_seconds=CS_DEDUP_WINDOW_SECONDS):
+    """True if a CS message and Gmail message are the same email across sources.
+
+    Matches on: from_address (exact) + message_date (within window) + subject (exact).
+    Both msgs should have 'from', 'date' (ISO string or parseable), and 'subject'.
+    """
+    cs_from = _extract_first_email(cs_msg.get("from", ""))
+    gmail_from = _extract_first_email(gmail_msg.get("from", ""))
+    if not cs_from or cs_from != gmail_from:
+        return False
+
+    if cs_msg.get("subject", "").strip() != gmail_msg.get("subject", "").strip():
+        return False
+
+    cs_dt = _parse_date_flexible(cs_msg.get("date", ""))
+    gmail_dt = _parse_date_flexible(gmail_msg.get("date", ""))
+    if cs_dt is None or gmail_dt is None:
+        return False
+
+    return abs((cs_dt - gmail_dt).total_seconds()) <= window_seconds
+
+
+def _extract_first_email(text):
+    """Extract the first email address from a string (handles 'Name <addr>' format)."""
+    addrs = emails_in(text)
+    return addrs[0] if addrs else None
+
+
+def _parse_date_flexible(date_str):
+    """Parse a date string to datetime (UTC). Handles ISO 8601 and RFC 2822."""
+    from datetime import datetime, timezone
+    if not date_str:
+        return None
+    for fmt in (
+        "%Y-%m-%dT%H:%M:%S%z",
+        "%Y-%m-%dT%H:%M:%S+00:00",
+        "%Y-%m-%d %H:%M:%S %z",
+        "%a, %d %b %Y %H:%M:%S %z",
+        "%a, %d %b %Y %H:%M:%S %Z",
+        "%a, %d %b %Y %H:%M:%S %z (%Z)",
+        "%d %b %Y %H:%M:%S %z",
+    ):
+        try:
+            return datetime.strptime(date_str.strip(), fmt)
+        except ValueError:
+            continue
+    m = re.search(r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})", date_str)
+    if m:
+        try:
+            return datetime.fromisoformat(m.group(1)).replace(tzinfo=timezone.utc)
+        except ValueError:
+            pass
+    return None
 
 
 def matches_merchant(addr, identity):

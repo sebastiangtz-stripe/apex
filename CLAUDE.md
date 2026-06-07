@@ -55,7 +55,7 @@ Specialized Cursor subagents live in `.cursor/agents/`. Each has its own context
 If `.env` looks healthy, run these in **parallel** where possible:
 
 1. Run `TZ="[YOUR_TIMEZONE]" date '+%A %Y-%m-%d %H:%M:%S %Z'` for current date/time (includes day of week). **Always use your local timezone.** Never infer the day of week — read it from the command output.
-2. **Asana reconcile**: Run `python3 scripts/asana-reconcile.py` to sync any changes made in Asana since last session (items completed on mobile, etc.).
+2. **Asana reconcile**: If any `projects/active/*/asana.json` files exist, run `python3 scripts/asana-reconcile.py` to sync any changes made in Asana since last session (items completed on mobile, etc.). Skip on fresh workspace where no Asana tasks have been created yet.
 3. **Silence scan**: Run `python3 scripts/last-activity.py --threshold-days 7 --json` to surface projects silent ≥7 days. Canonical helper parses both `## YYYY-MM-DD` and `## [YYYY-MM-DD]` H2 headers using `max()` (robust against out-of-order entries). Pass `--include-scan-state` if you want scanner activity to count as engagement. Never reimplement this with inline `re.findall + dates[-1]` — that silently inverts the silence direction since timelines are newest-at-top.
 4. **Calendar**: Fetch today's calendar (skip on weekends — note "Weekend mode"). If any event within the next 2 hours matches a merchant name in `projects/active/`, note it in the summary: "Meeting with [merchant] in Xh — run `/meeting-prep <slug>` before the call."
 5. **Session continuity**: Read most recent `sessions/*.md` for continuity.

@@ -20,6 +20,7 @@
 - [Engineering contact] — [role] — engineering@example.com
 
 ## Communication
+- **Scan source**: managed
 - **Email search**: from:example.com OR to:example.com
 - **Slack channels**: #gamma-llc-stripe
 - **Stripe contacts**: [your AE], [your SE]

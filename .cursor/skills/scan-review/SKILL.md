@@ -39,6 +39,36 @@ Run `python3 scripts/cross-merchant-audit.py --json` (~2s, read-only). If it
 returns suspect entries, surface them in the final triage summary under a
 `Cross-merchant Contamination` section. Do not auto-move entries.
 
+## Phase 1a-pre: Case Studio fetch (Core projects only)
+
+Pull email messages from Case Studio (Hubble) for all Accelerate Core projects.
+This runs BEFORE the Gmail fan-out so cross-source dedup works correctly.
+
+1. Check if any active project has `scan_source: core` in PROJECT.md (quick grep).
+   If none → skip this phase entirely.
+2. Read `data/cs-scan-state.json` for `last_scan` timestamp.
+   If `last_scan` is null, default to 30 days ago.
+3. Read `templates/cs-incremental.sql`, substitute:
+   - `{{consultant_username}}` from `.env` `CONSULTANT_USERNAME`
+   - `{{since_timestamp}}` from `last_scan` (format: `YYYY-MM-DD HH:MM:SS`, space separator — NOT `T`)
+4. Execute the rendered SQL via `run_hubble_query` MCP tool.
+   Save raw results to `data/cs-raw-results.json` with schema:
+   `{ "query_id": "...", "query_status": "success", "row_count": N, "results": [...] }`
+5. Run `python3 scripts/fetch-cs.py` — splits results into per-merchant staging files
+   (`data/staging/<slug>-<YYYY-MM-DD>-cs.json`).
+6. If `fetch-cs.py` reports unmapped cases, surface them in the triage summary under
+   "Unmapped CS Cases — run `manage-case-map.py --add <case_id> <slug>`".
+7. Continue to Phase 1a (Gmail fan-out) for ALL projects — Gmail remains the source
+   for managed projects and the gap-fill for core projects.
+
+Notes:
+- The Hubble query is ONE query for ALL cases (bulk). It joins `mongo.sfdcemailmessages`
+  to `analytics.userops_cases` filtered by `assignee_email` and `latest_queue = 'Accelerate Core'`.
+- `message_date` returns as Unix epoch integer — `fetch-cs.py` converts to ISO.
+- `is_incoming=false` means sent via accelerate@ (definitive outbound). `is_incoming=true`
+  still needs from_address check (consultant-sent-via-Gmail appears as incoming in CS).
+- CS staging files are processed first by `ingest-comms.py` (sorted by filename).
+
 ## Phase 1a: Fetch (LLM fan-out)
 
 1. List all active merchants: `ls projects/active/`.
@@ -72,19 +102,25 @@ The fetch subagent does NO filtering, NO dedup, NO file writes to project folder
 Run `python3 scripts/ingest-comms.py` to process all staging files at once.
 
 The script handles deterministically:
-- Email dedup against `scan-state.json` (by message_id)
-- Slack dedup at message level: tracks `slack_thread_state` with `last_message_ts` per thread — only new replies are appended (not the full thread again)
+- **Source detection**: branches on `"source": "case_studio"` vs Gmail (default)
+- **CS email dedup**: against `logged_cs_message_ids` in scan-state (by sfdc_id)
+- **Gmail email dedup**: against `logged_email_ids` in scan-state (by message_id)
+- **Cross-source dedup** (batch-level): for Core projects, Gmail messages are checked against CS messages ingested in the same batch. Matching messages are skipped (CS wins).
+- **Hybrid direction detection** for CS: `is_incoming=false` → Outbound; `is_incoming=true` + from matches outbound addresses → Outbound; else → Inbound
+- Slack dedup at message level: tracks `slack_thread_state` with `last_message_ts` per thread
 - Identity gate (quarantines messages that don't match the merchant's identity model)
 - Writes to `raw/comms.md` (full verbatim entry)
 - Writes to `timeline.md` (structured metadata with `_pending_` summary)
 - Contact discovery (patches PROJECT.md email query + Key Contacts)
 - Updates `scan-state.json`
 
-The script outputs JSON to stdout with per-merchant stats. Parse this to know which merchants have new content for Phase 2.
+Processing order: CS staging files (`*-cs.json`) are sorted first, then Gmail files. This ensures cross-source dedup works correctly.
+
+The script outputs JSON to stdout with per-merchant stats. Parse this to know which merchants have new content for Phase 2. Trigger condition: `new_emails + new_cs_emails + new_slack_threads > 0`.
 
 ## Phase 2: Review
 
-For each merchant where `new_emails + new_slack_threads > 0` in the ingest report:
+For each merchant where `new_emails + new_cs_emails + new_slack_threads > 0` in the ingest report:
 
 1. Fan out one `/comms-analyst` invocation per merchant **in parallel**.
 2. Each subagent returns proposals: `{ auto_close[], new_items[], waiting_on_merchant[], commitments[], dedupe_skipped[], inline_gaps[], asana_comments[], timeline_summaries[] }`.
