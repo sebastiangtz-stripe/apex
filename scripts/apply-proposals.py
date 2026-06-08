@@ -424,7 +424,12 @@ def load_proposals(path):
     data["auto_close"] = assign_ids(data.get("auto_close", []), "close")
     data["new_items"] = assign_ids(data.get("new_items", []), "create")
     data["inline_gaps"] = assign_ids(data.get("inline_gaps", []), "gap")
-    data.setdefault("apply_status", {})
+    apply_status = data.get("apply_status", {})
+    if not isinstance(apply_status, dict):
+        print(f"  [fix] {path.name}: apply_status was {type(apply_status).__name__} "
+              f"'{apply_status}' — coercing to {{}}")
+        apply_status = {}
+    data["apply_status"] = apply_status
     return data
 
 
@@ -451,7 +456,9 @@ def all_applied(data):
     queue immediately. A file with items but no apply_status entries (or
     items missing IDs) is NOT applied — the applier still needs to process it.
     """
-    apply_status = data.get("apply_status", {}) or {}
+    apply_status = data.get("apply_status", {})
+    if not isinstance(apply_status, dict):
+        apply_status = {}
     actionable_count = (
         len(data.get("auto_close") or [])
         + len(data.get("new_items") or [])
