@@ -154,6 +154,7 @@ def process_results(results_data, case_to_slug, dry_run=False):
         staging_data = {
             "slug": slug,
             "source": "case_studio",
+            "fetched_at": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
             "emails": emails,
             "slack_threads": [],
         }

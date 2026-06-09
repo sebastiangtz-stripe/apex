@@ -33,6 +33,11 @@ merchants that need a project bootstrapped.
 Important: Phase 0 runs **before** Phase 1's `ls projects/active/` so any
 projects bootstrapped here are immediately visible to the per-merchant scan.
 
+**Guardrail**: If Phase 0 returns 0 proposals, no new projects are created during this
+scan run — regardless of what appears in Phase 1a output. Phase 1a fetch results
+(including messages visible in handover channels) MUST NOT trigger `handover-bootstrap`.
+Only Phase 0 proposals can trigger project bootstrapping.
+
 ## Phase 0.5: Cross-merchant contamination check
 
 Run `python3 scripts/cross-merchant-audit.py --json` (~2s, read-only). If it
@@ -76,7 +81,14 @@ Notes:
    - `PROJECT.md` → extract `Email search` query and `Slack channels`
    - `scan-state.json` → extract `last_email_scan`, `last_slack_scan`, and `slack_thread_state`
    - `hubble.json` → extract `primary_contact_email` (fallback for email query construction)
+   - **Slack channel extraction rule**: Parse ONLY the literal `**Slack channels**:` field
+     line in PROJECT.md. Never regex the entire file. The file contains channel IDs embedded
+     in Handover: URLs and other contexts — those MUST be ignored. If the field value is
+     "TBD" or empty, pass an empty `slack_channels` list.
 3. Apply 4-hour TTL: skip merchants whose `last_email_scan` < 4 hours old.
+   Exception: if the user explicitly requested this scan (e.g. "scan email", "scan all",
+   "re-scan") rather than auto-startup, bypass the TTL and scan all eligible projects
+   regardless of `last_email_scan` timestamp.
 4. **Construct email_query** (never skip a merchant just because Email search is TBD):
    - If `Email search` in PROJECT.md is populated and not "TBD" → use it as-is.
    - Else if `primary_contact_email` exists in `hubble.json`:
@@ -93,6 +105,8 @@ Notes:
    - `slack_since` (from scan-state.json)
    - `active_threads` (from step 5 — enables re-fetch of known threads for new replies)
 7. Each subagent writes a staging file to `data/staging/<slug>-<YYYY-MM-DD>.json` and returns `{ slug, emails_fetched, slack_threads_fetched, errors }`.
+   Each staging file MUST include a top-level `"fetched_at"` field set to the ISO timestamp
+   (UTC, seconds precision, Z suffix) of when the MCP tool responses were received.
 8. Aggregate returns — note any errors for the triage summary.
 
 The fetch subagent does NO filtering, NO dedup, NO file writes to project folders. It only calls MCP tools and dumps raw results to staging.
@@ -126,6 +140,8 @@ For each merchant where `new_emails + new_cs_emails + new_slack_threads > 0` in 
 2. Each subagent returns proposals: `{ auto_close[], new_items[], waiting_on_merchant[], commitments[], dedupe_skipped[], inline_gaps[], asana_comments[], timeline_summaries[] }`.
 3. **Persist each proposal to disk BEFORE any writes**, then invoke the script-driven applier:
    - Write each analyst return to `data/scan-proposals/<slug>-<YYYY-MM-DD>.json`.
+     Set `"apply_status": {}` (empty dict) when persisting. Never write it as a string.
+     The applier expects a dict keyed by proposal item ID.
    - Once all JSONs are on disk, run `python3 scripts/apply-proposals.py --resume`.
    - For `commitments[]`: persist to `projects/active/<slug>/commitments.md` (see below).
    - Surface the applier's run report in the triage summary.

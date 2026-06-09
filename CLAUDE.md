@@ -397,7 +397,7 @@ Suggest changes when:
 
 ## Session Logging
 
-Write at end-of-session ("Wrap up") to `sessions/YYYY-MM-DD.md`. Multiple sessions same day separated by `---`. Cap pending at top 10 if >15.
+Write at end-of-session ("Wrap up") to `sessions/YYYY-MM-DD.md`. Multiple sessions same day separated by `---`. Cap pending at top 10 if >15. The YYYY-MM-DD in session filenames and the `# Session — YYYY-MM-DD` header uses the consultant's local timezone (from the system `date` command), not UTC. This prevents evening sessions that cross midnight UTC from being misdated.
 
 Format:
 ```
