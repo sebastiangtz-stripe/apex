@@ -424,7 +424,8 @@ def load_proposals(path):
     data["auto_close"] = assign_ids(data.get("auto_close", []), "close")
     data["new_items"] = assign_ids(data.get("new_items", []), "create")
     data["inline_gaps"] = assign_ids(data.get("inline_gaps", []), "gap")
-    data.setdefault("apply_status", {})
+    if not isinstance(data.get("apply_status"), dict):
+        data["apply_status"] = {}
     return data
 
 
@@ -824,7 +825,10 @@ def apply_file(path, dry_run, run_report):
     auto_close = data.get("auto_close", [])
     new_items = data.get("new_items", [])
     inline_gaps = data.get("inline_gaps", [])
-    apply_status = data.setdefault("apply_status", {})
+    apply_status = data.get("apply_status", {})
+    if not isinstance(apply_status, dict):
+        apply_status = {}
+    data["apply_status"] = apply_status
 
     actionable_creates = [
         it for it in new_items if apply_status.get(it["id"], {}).get("status") not in
