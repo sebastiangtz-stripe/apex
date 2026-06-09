@@ -26,6 +26,13 @@ data/hubble-snapshot.json
 # ── Drift audit timestamp file (regenerated on every run) ────────────────────
 data/runbooks/drift-audit-last-run.txt
 
+# ── Apex update state (live-workspace-only, never synced) ────────────────────
+data/update-check-state.json
+data/update-applied-log.json
+data/update-config.json
+data/migrations/state.json
+data/.migration-backups/
+
 # ── Real merchant data — never commit ────────────────────────────────────────
 # Each contributor's own merchant projects, sessions, and lessons stay local.
 # The repo only ships the example-merchant scaffold + INDEX placeholders.

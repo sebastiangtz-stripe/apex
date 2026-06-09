@@ -1,0 +1,114 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Apex Migration Manifest",
+  "description": "Schema for migration manifests that travel with apex template updates",
+  "type": "object",
+  "required": ["schema_version", "migration_id", "description", "steps", "post_conditions"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "enum": ["1.0"]
+    },
+    "migration_id": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9-]+$"
+    },
+    "description": {
+      "type": "string",
+      "minLength": 10
+    },
+    "author": {
+      "type": "string"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "pre_conditions": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/condition" }
+    },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/step" }
+    },
+    "post_conditions": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/condition" }
+    },
+    "rollback": {
+      "type": "object",
+      "properties": {
+        "strategy": { "type": "string", "enum": ["backup_restore"] },
+        "paths": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["strategy", "paths"]
+    }
+  },
+  "definitions": {
+    "condition": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "file_exists", "file_absent",
+            "env_key_present", "env_key_absent",
+            "json_valid", "json_contains", "json_key_absent",
+            "command_succeeds", "command_output_contains"
+          ]
+        },
+        "path": { "type": "string" },
+        "key": { "type": "string" },
+        "key_path": { "type": "string" },
+        "keys": { "type": "array", "items": { "type": "string" } },
+        "value": {},
+        "command": { "type": "string" },
+        "expected": { "type": "string" },
+        "timeout": { "type": "integer", "default": 30 }
+      }
+    },
+    "step": {
+      "type": "object",
+      "required": ["id", "type", "description"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^step-[0-9]{2}$" },
+        "type": {
+          "type": "string",
+          "enum": ["env_append", "json_merge", "run_command", "file_ensure", "rename_path", "delete_path"]
+        },
+        "description": { "type": "string" },
+        "validate_after": { "$ref": "#/definitions/condition" },
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["key", "default"],
+            "properties": {
+              "key": { "type": "string" },
+              "default": { "type": "string" },
+              "comment": { "type": "string" }
+            }
+          }
+        },
+        "target": { "type": "string" },
+        "merge_path": { "type": "string" },
+        "values": {},
+        "strategy": {
+          "type": "string",
+          "enum": ["array_append_dedup", "object_merge_shallow", "object_merge_deep"]
+        },
+        "command": { "type": "string" },
+        "expected_stdout": { "type": "string" },
+        "timeout": { "type": "integer", "default": 30 },
+        "path": { "type": "string" },
+        "source_template": { "type": "string" },
+        "from": { "type": "string" },
+        "to": { "type": "string" }
+      }
+    }
+  }
+}
