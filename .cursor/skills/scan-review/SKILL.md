@@ -76,7 +76,14 @@ Notes:
    - `PROJECT.md` → extract `Email search` query and `Slack channels`
    - `scan-state.json` → extract `last_email_scan`, `last_slack_scan`, and `slack_thread_state`
    - `hubble.json` → extract `primary_contact_email` (fallback for email query construction)
+   - **Slack channel extraction rule**: Parse ONLY the literal `**Slack channels**:` field
+     line in PROJECT.md. Never regex the entire file. The file contains channel IDs embedded
+     in Handover: URLs and other contexts — those MUST be ignored. If the field value is
+     "TBD" or empty, pass an empty `slack_channels` list.
 3. Apply 4-hour TTL: skip merchants whose `last_email_scan` < 4 hours old.
+   Exception: if the user explicitly requested this scan (e.g. "scan email", "scan all",
+   "re-scan") rather than auto-startup, bypass the TTL and scan all eligible projects
+   regardless of `last_email_scan` timestamp.
 4. **Construct email_query** (never skip a merchant just because Email search is TBD):
    - If `Email search` in PROJECT.md is populated and not "TBD" → use it as-is.
    - Else if `primary_contact_email` exists in `hubble.json`:

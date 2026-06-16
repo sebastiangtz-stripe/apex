@@ -669,14 +669,16 @@ def ingest_staging_file(staging_path, dry_run=False):
     state["logged_cs_message_ids"] = sorted(logged_cs_ids)
     state["logged_slack_thread_ids"] = sorted(logged_slack_ids)
     state["slack_thread_state"] = slack_thread_state
-    now = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    fetched_at = data.get("fetched_at")
+    if not fetched_at:
+        fetched_at = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
     if data.get("emails") is not None:
         if source == "case_studio":
-            state["last_cs_scan"] = now
+            state["last_cs_scan"] = fetched_at
         else:
-            state["last_email_scan"] = now
+            state["last_email_scan"] = fetched_at
     if data.get("slack_threads") is not None and source != "case_studio":
-        state["last_slack_scan"] = now
+        state["last_slack_scan"] = fetched_at
     save_scan_state(slug, state, dry_run)
 
     return result
