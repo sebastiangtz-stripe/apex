@@ -79,6 +79,7 @@ If `.env` looks healthy, run these in **parallel** where possible:
  - **Drift audit (weekly)**: If today is Monday OR last `data/runbooks/drift-audit-last-run.txt` mtime >7d, run `python3 scripts/drift-audit.py`. Surface any CRITICAL findings (Section A archived-but-listed, Section C hubble_pid_collisions, Section E future_timestamp). Skip otherwise.
  - **Dual-write health (last 7 days)**: Run `python3 scripts/dual-write-health.py --oneliner`. Surface only if there are pending review items, drift, or zero clean runs. Skip otherwise. This is the public-facing rollup of the resilience pipeline (Phase 6 of dual-write-resilience).
  - **Template drift (apex)**: Run `python3 scripts/sync-template.py --check`. If it reports DRIFT, surface a single-line note: *"Template drift: N template-relevant paths differ from apex. Run `python3 scripts/sync-template.py --push --message <msg>` after wrap-up."* Non-blocking; informational only.
+ - **Apex updates (Mondays only)**: If today is Monday AND `data/update-check-state.json` does not exist or its `last_check_date` ≠ today: run `python3 scripts/update-from-apex.py --check`. If it reports `updates_available`, surface: *"Apex updates: N files changed, M migration(s) pending. Say 'pull updates' to review."* If `env_migrations` is non-empty, flag as action required. If `pending_migrations` > 0, flag: *"Structural migrations pending — run `python3 scripts/apply-migration.py --apply-all` after file updates."* On non-Mondays, skip unless explicitly invoked. Non-blocking; informational only.
  - **Last session**: Date, 1-sentence summary, pending count
  - **Quick actions**: 1-2 concrete next steps
 11. At scale (35+): Cap at top 10 items, summarize rest
@@ -267,7 +268,9 @@ GID appears in template content. Bypass is not supported.
 | "what changed since last sync" / "template drift" | Run `python3 scripts/sync-template.py --check`. List the drifted paths. |
 | "preview template sync" / "dry run" | Run `python3 scripts/sync-template.py --dry-run`. Show the proposed diff + genericization. |
 | "weekly sync report" | Run `python3 scripts/sync-template.py --report`. Surface recent apex commits + staleness. |
-| "pull from apex" | Run `git -C ~/Documents/accelerate-apex-template/ pull --rebase`. Then offer to manually walk diffs into the live workspace (no auto-apply — merchant data must be preserved). |
+| "pull from apex" / "pull updates" / "apply updates" / "update from apex" | Run `python3 scripts/update-from-apex.py --check`. If updates available, run `--diff`. Present each file's diff conversationally with accept/reject per file. On accept: run `--apply-file <path>`. After all files reviewed: run `--finalize`. |
+| "check for updates" / "any updates from apex?" | Run `python3 scripts/update-from-apex.py --check`. Surface commit list + file count if available. |
+| "update status" | Run `python3 scripts/update-from-apex.py --status`. Show last check time + pending count. |
 
 ### When to suggest a sync proactively
 
@@ -307,6 +310,19 @@ See [`data/runbooks/template-sync.md`](data/runbooks/template-sync.md) for:
 - Leak-scan denylist
 - Onboarding Diego's workspace
 - Failure modes + audit trail (`data/runbooks/template-sync-log.md`)
+
+### Migration Execution Protocol
+
+When `python3 scripts/apply-migration.py --check` reports pending migrations:
+
+1. **List** each migration ID + description to the user.
+2. **Ask**: "Apply N migration(s)? (yes / no / show details)"
+3. On yes: run `python3 scripts/apply-migration.py --apply-all`
+4. **Report** the script's JSON output verbatim — do NOT paraphrase error details.
+5. If any step failed: read the error, suggest the specific fix, wait for user.
+6. **NEVER** manually edit files that a migration targets — always re-run the script after fixing the blocker.
+
+You are the narrator and invoker. The script is the executor. Do not bypass it.
 
 ---
 

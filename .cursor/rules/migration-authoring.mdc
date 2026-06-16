@@ -1,0 +1,123 @@
+---
+description: "Guide for authoring migration manifests in data/migrations/"
+globs: ["data/migrations/*.json", "!data/migrations/schema.json", "!data/migrations/state.json"]
+alwaysApply: false
+---
+
+# Migration Manifest Authoring
+
+When creating a migration manifest, follow this structure exactly.
+
+## When a migration is needed
+
+A migration is needed when a PR introduces changes that require MORE than file replacement in the receiving workspace:
+
+- New `.env` variables referenced by scripts
+- New entries in `.cursor/settings.json` (permissions, MCP configs)
+- Commands that must run after file updates (pip install, script execution)
+- File renames or deletions
+- Schema changes to state files (scan-state.json, asana.json)
+
+If the change is purely a file update (new script logic, updated CLAUDE.md, new agent prompt), no migration is needed — `update-from-apex.py` handles those.
+
+## File naming
+
+`data/migrations/<YYYY-MM-DD>-<slug>.json`
+
+- Date = the PR merge date (or expected merge date)
+- Slug = kebab-case description matching `migration_id`
+
+## Required fields
+
+- `schema_version`: always `"1.0"`
+- `migration_id`: matches filename without `.json` extension
+- `description`: one sentence explaining WHY this migration exists
+- `author`: GitHub username of the person writing the migration
+- `created_at`: ISO 8601 timestamp (UTC)
+- `steps`: array of step objects (at least one)
+- `post_conditions`: array of assertions (at least one)
+
+## Step types
+
+| Type | Purpose | Required fields |
+|------|---------|----------------|
+| `env_append` | Add key=value lines to .env (deduped) | `entries: [{key, default, comment}]` |
+| `json_merge` | Merge into a JSON file | `target, merge_path, values, strategy` |
+| `run_command` | Execute a shell command | `command`, optional: `expected_stdout, timeout` |
+| `file_ensure` | Create a file if it doesn't exist | `path`, optional: `source_template` |
+| `rename_path` | Rename or move a file | `from, to` |
+| `delete_path` | Remove a file or directory | `path` |
+
+### Merge strategies for `json_merge`
+
+- `array_append_dedup` — append values to array, skip if already present
+- `object_merge_shallow` — merge top-level keys (existing preserved)
+- `object_merge_deep` — recursive merge
+
+## Every step MUST have
+
+- `id`: sequential `"step-01"`, `"step-02"`, etc.
+- `type`: one of the types above
+- `description`: human-readable explanation
+
+## Validation rules
+
+- Add `validate_after` to any step that modifies a file (catches failures early)
+- Always include at least one `post_conditions` entry
+- For any JSON file touched: include `{"type": "json_valid", "path": "<target>"}`
+- For commands: always set `timeout` (default 30s)
+
+## Rollback
+
+Always include:
+```json
+"rollback": {"strategy": "backup_restore", "paths": ["<every file this migration modifies>"]}
+```
+
+The executor backs up these files before running and restores ALL of them if ANY step fails.
+
+## Pre-conditions (idempotency)
+
+Include `pre_conditions` that would FAIL if the migration has already been applied. This makes re-running safe.
+
+Example: if adding a key to `.env`, include:
+```json
+{"type": "env_key_absent", "key": "THE_NEW_KEY"}
+```
+
+Example: if adding a value to a JSON array, include:
+```json
+{"type": "json_key_absent", "path": ".cursor/settings.json", "key_path": "permissions.allow", "value": "the_new_value"}
+```
+
+## Complete example
+
+```json
+{
+  "schema_version": "1.0",
+  "migration_id": "2026-06-09-add-slack-permissions",
+  "description": "scan-review Phase 1a now reads public Slack channels directly",
+  "author": "sebastiangtz",
+  "created_at": "2026-06-09T14:00:00Z",
+  "pre_conditions": [
+    {"type": "file_exists", "path": ".cursor/settings.json"},
+    {"type": "json_key_absent", "path": ".cursor/settings.json", "key_path": "permissions.allow", "value": "read_slack_public_channel_history"}
+  ],
+  "steps": [
+    {
+      "id": "step-01",
+      "type": "json_merge",
+      "description": "Add read_slack_public_channel_history to allowed tools",
+      "target": ".cursor/settings.json",
+      "merge_path": "permissions.allow",
+      "values": ["read_slack_public_channel_history"],
+      "strategy": "array_append_dedup",
+      "validate_after": {"type": "json_contains", "path": ".cursor/settings.json", "key_path": "permissions.allow", "value": "read_slack_public_channel_history"}
+    }
+  ],
+  "post_conditions": [
+    {"type": "json_valid", "path": ".cursor/settings.json"}
+  ],
+  "rollback": {"strategy": "backup_restore", "paths": [".cursor/settings.json"]}
+}
+```

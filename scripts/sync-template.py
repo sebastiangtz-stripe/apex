@@ -650,11 +650,10 @@ def mode_report():
     print("(run `git -C ~/Documents/accelerate-apex-template/ log --diff-filter=AM --name-only --since=30.days | sort -u` for inverse)")
 
 def mode_pull_review():
-    """Pull apex + show diff vs live workspace, file-by-file."""
-    print("--pull --review not yet implemented. Workflow:\n"
-          "  1. git -C ~/Documents/accelerate-apex-template/ pull --rebase\n"
-          "  2. Manually diff against your live workspace and copy desired changes.\n"
-          "Reverse-sync from template → live is intentionally manual to avoid clobbering merchant data.")
+    """Pull direction is handled by scripts/update-from-apex.py."""
+    print("The pull/review flow is now handled by scripts/update-from-apex.py.")
+    print("Run: python3 scripts/update-from-apex.py --check")
+    print("See CLAUDE.md § Template Sync Protocol for conversational mappings.")
     sys.exit(0)
 
 # ── Main ─────────────────────────────────────────────────────────────────────

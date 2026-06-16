@@ -194,6 +194,29 @@ Run two checks back-to-back:
 On both green, present a single-line summary plus the counts (skills
 validated, Asana objects resolved, Hubble status).
 
+### Phase 5.5 — Write update-config.json
+
+Generate the de-genericization config from values already resolved in Phases 1–2.
+This enables `scripts/update-from-apex.py` to de-genericize template content when
+pulling updates from apex.
+
+Write to `data/update-config.json`:
+
+```json
+{
+  "substitutions": {
+    "[YOUR_NAME]": "<full_name from Home lookup>",
+    "[YOUR_INITIALS]": "<initials derived from name>",
+    "[YOUR_TIMEZONE]": "<timezone from system date>",
+    "[YOUR_BOARD_NAME]": "<board name from Asana project>",
+    "your.name@stripe.com": "<SLACK_HANDLE>@stripe.com",
+    "<your_first_name_lowercased>": "<first_name.lower()>"
+  }
+}
+```
+
+If the file already exists, overwrite it (setup re-run refreshes all values).
+
 ### Phase 6 — Scaffold projects
 
 After the smoke test passes, present the success message (see Output below),

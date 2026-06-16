@@ -1,0 +1,11 @@
+{
+  "_comment": "De-genericization mapping for update-from-apex.py. Maps template placeholders to your real values. Created by /setup; edit manually if needed.",
+  "substitutions": {
+    "[YOUR_NAME]": "Your Full Name",
+    "[YOUR_INITIALS]": "YFN",
+    "[YOUR_TIMEZONE]": "America/Your_City",
+    "[YOUR_BOARD_NAME]": "Your Asana Board Name",
+    "your.name@stripe.com": "your.actual@stripe.com",
+    "<your_first_name_lowercased>": "yourfirstname"
+  }
+}
