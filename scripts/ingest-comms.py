@@ -115,6 +115,17 @@ def short_name(from_or_to):
     return name
 
 
+def _resolve_display_name(addr, from_field, to_field, cc_field):
+    """Find display name for addr from raw header fields."""
+    for field in (from_field, to_field, cc_field):
+        if not field:
+            continue
+        if addr.lower() in field.lower():
+            return extract_name(field)
+    local = addr.split("@")[0]
+    return local.replace(".", " ").title()
+
+
 # ── Scan-state management ─────────────────────────────────────────────────
 
 def load_scan_state(slug):
@@ -312,9 +323,12 @@ def prepend_to_timeline(slug, entry_text, dry_run=False):
 # ── Contact discovery ─────────────────────────────────────────────────────
 
 def discover_contacts(slug, all_addresses, identity, dry_run=False):
-    """Find new addresses not covered by the identity model. Return list of added contacts."""
+    """Find new addresses not covered by the identity model. Return list of added contacts.
+    all_addresses: dict {addr: display_name} or iterable of bare addresses (backward compat).
+    """
     added = []
-    for addr in all_addresses:
+    items = all_addresses.items() if isinstance(all_addresses, dict) else ((a, None) for a in all_addresses)
+    for addr, display_name in items:
         addr = addr.lower()
         domain = addr.split("@", 1)[1] if "@" in addr else ""
         if is_stripe_internal(domain):
@@ -325,11 +339,10 @@ def discover_contacts(slug, all_addresses, identity, dry_run=False):
             continue
         if domain in GENERIC_DOMAINS:
             continue
-        # New non-generic domain not in identity model — add it
         added.append(addr)
         if not dry_run:
             _patch_project_email_query(slug, domain)
-            _patch_project_contacts(slug, addr)
+            _patch_project_contacts(slug, addr, display_name=display_name)
 
     return added
 
@@ -353,7 +366,7 @@ def _patch_project_email_query(slug, domain):
     path.write_text("\n".join(lines) + "\n")
 
 
-def _patch_project_contacts(slug, addr):
+def _patch_project_contacts(slug, addr, display_name=None):
     """Add an address to Key Contacts in PROJECT.md if not already present."""
     path = PROJECTS_DIR / slug / "PROJECT.md"
     if not path.exists():
@@ -374,8 +387,11 @@ def _patch_project_contacts(slug, addr):
         if in_contacts and line.strip().startswith("- "):
             insert_at = i + 1
     if insert_at is not None:
-        local = addr.split("@")[0]
-        display = local.replace(".", " ").title()
+        if display_name and display_name.lower() != addr.lower():
+            display = display_name
+        else:
+            local = addr.split("@")[0]
+            display = local.replace(".", " ").title()
         lines.insert(insert_at, f"- {display} — {addr}")
         path.write_text("\n".join(lines) + "\n")
 
@@ -441,7 +457,7 @@ def ingest_staging_file(staging_path, dry_run=False):
         slack_thread_state = {k: {"last_message_ts": "0", "messages_logged": 0}
                              for k in logged_slack_ids}
 
-    all_new_addresses = set()
+    all_new_addresses = {}  # {bare_addr: display_name}
 
     # ── Process emails ─────────────────────────────────────────────────
     for email in data.get("emails", []):
@@ -506,7 +522,9 @@ def ingest_staging_file(staging_path, dry_run=False):
             prepend_to_timeline(slug, timeline, dry_run)
 
             logged_cs_ids.add(sfdc_id)
-            all_new_addresses.update(non_auto_participants)
+            for p in non_auto_participants:
+                if p not in all_new_addresses:
+                    all_new_addresses[p] = _resolve_display_name(p, from_field, to_field, cc_field)
             result["new_cs_emails"] += 1
 
             # Register in batch index for cross-source dedup
@@ -580,7 +598,9 @@ def ingest_staging_file(staging_path, dry_run=False):
 
             # Track for dedup + contact discovery
             logged_email_ids.add(msg_id)
-            all_new_addresses.update(non_auto_participants)
+            for p in non_auto_participants:
+                if p not in all_new_addresses:
+                    all_new_addresses[p] = _resolve_display_name(p, from_field, to_field, cc_field)
             result["new_emails"] += 1
 
     # ── Process Slack threads ──────────────────────────────────────────
