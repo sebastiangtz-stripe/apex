@@ -170,6 +170,7 @@ If the merchant has no new activity since `since`, return `headline: "no activit
 ## Hard rules
 
 - **Read-only.** Never modify any file. Never call any write API. Your only output is the JSON above.
+- **Do not include `apply_status` in your output.** Omit the field entirely — `apply-proposals.py` initializes it on first load.
 - **Confidence matters.** For `auto_close`, only propose `high` confidence matches. Mark `medium`/`low` so the parent can surface them for human review instead of auto-applying.
 - **Pass-through Asana GIDs.** The parent uses these to call the Asana API directly; if you can't find a GID, omit the proposal rather than guess.
 - **Don't propose action items for purely informational threads** (e.g. system notifications, unrelated cc'd discussions). Only propose where [YOUR_NAME] or the merchant clearly owes the other something.

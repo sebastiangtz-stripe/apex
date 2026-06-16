@@ -206,6 +206,8 @@ def match_hubble_to_local(projects: list[dict], scope: list[Path]) -> tuple[dict
 
 GENERIC_DOMAINS = {"gmail.com", "icloud.com", "hotmail.com", "outlook.com", "yahoo.com", "me.com", "live.com", "aol.com"}
 
+TLD_SUFFIXES = {"com", "org", "net", "io", "co", "uk", "de", "fr", "es", "au", "ca", "us", "me", "ai", "app", "dev", "xyz"}
+
 
 def build_email_query_from_contact(email: str, merchant_name: str) -> str:
     """Construct an Email search query from a contact email address."""
@@ -386,6 +388,25 @@ def apply_backfill(slug_dir: Path, row: dict, fetched_at: str, dry_run: bool) ->
 
     # Auto-construct Email search query when TBD and contact email available
     contact_email = row.get("primary_contact_email")
+    if contact_email and "@" in contact_email:
+        domain = contact_email.split("@")[-1].lower()
+        if domain not in GENERIC_DOMAINS:
+            domain_parts = domain.split(".")
+            meaningful = [p for p in domain_parts if p not in TLD_SUFFIXES]
+            domain_stem = max(meaningful, key=len) if meaningful else ""
+            if domain_stem:
+                slug_tokens = set(slug_dir.name.replace("-", " ").split())
+                name_tokens = set(norm_name(row.get("project_name", "")).split())
+                all_tokens = slug_tokens | name_tokens
+                if not any(
+                    (token in domain_stem or domain_stem in token)
+                    for token in all_tokens if len(token) > 2
+                ):
+                    print(f"  [WARN] {slug_dir.name}: contact {contact_email} domain "
+                          f"'{domain}' doesn't match slug or project name — "
+                          f"skipping contact backfill. Review manually.")
+                    contact_email = None
+
     if contact_email:
         # Match both bold and non-bold formats for backward compat
         email_search_match = re.search(r"- (?:\*\*)?Email search(?:\*\*)?:\s*(.+)", text)
