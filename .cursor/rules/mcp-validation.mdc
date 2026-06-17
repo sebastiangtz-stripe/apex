@@ -1,0 +1,67 @@
+---
+description: MCP connectivity validation — gate before any fan-out that depends on MCP tools
+alwaysApply: true
+---
+
+# MCP Connectivity Gate
+
+Before fanning out multiple subagents that call MCP tools, validate that the
+required services are reachable. One probe per service, once per pipeline
+invocation — not per-phase, not per-subagent.
+
+## When to validate (exhaustive list)
+
+| Pipeline | Gate point | Services to probe |
+|----------|-----------|-------------------|
+| `scan-review` | Once, before Phase 0 (covers Phases 0 + 1a) | Gmail + Slack |
+| `handover-bootstrap` backfill mode | Once, before Phase B2 search fan-out | Slack |
+| `catchup` | Inherits from scan-review (Phase 3) — no separate check | — |
+
+## When NOT to validate
+
+- Single ad-hoc MCP calls (user says "check email for X", "read that Slack thread") — if it fails, surface the error directly. No pre-gate needed.
+- `/hubble-analyst` — single subagent, single MCP call. Fails fast on its own.
+- `meeting-prep` Step D — single fresh fetch for one merchant. Fails fast.
+- `email-agent` Step 5 — single Gmail send. Fails fast with clear error.
+- `handover-bootstrap` paste mode — single Slack thread fetch. Fails fast.
+- Calendar fetch (startup step 4) — single call. Fails fast.
+
+The threshold is: **will failure waste >30 seconds of parallel subagent spawns?**
+If yes → gate. If no → let it fail naturally.
+
+## How to validate
+
+Make ONE lightweight probe call per required service:
+
+- **Gmail**: `search_gmail` with query `"in:inbox"` and `max_results: 1`
+- **Slack**: `read_slack_channel_history` on `HANDOVER_CHANNEL_ID` (from `.env`) with `limit: 1`
+
+Evaluate the response:
+
+- Success (even empty results) → proceed
+- Connection error / "tool not found" / timeout → abort the fan-out
+
+## On failure
+
+1. Do NOT fan out subagents.
+2. Surface:
+   ```
+   MCP connectivity check failed:
+   - Gmail: [connected | FAILED: <error>]
+   - Slack: [connected | FAILED: <error>]
+
+   Scan aborted. MCP servers are not connected in this Cursor session.
+   Fix: Check Cursor MCP settings, re-authorize at go/toolshed-auth, or restart Cursor.
+   ```
+3. Continue with non-MCP work (Asana reconcile, silence scan, session continuity, local scripts).
+
+## What counts as a failure
+
+- "Tool not found" / "No such tool" — MCP server not loaded in session
+- Connection refused / timeout — server process not running
+- 401/403 — authorization expired (suggest go/toolshed-auth)
+
+## What does NOT count as a failure
+
+- Empty results (0 emails, 0 messages) — service is connected
+- Rate limiting (429) — service is connected, just throttled; proceed normally

@@ -150,6 +150,18 @@ or are in processed_threads. Nothing to search." — then stop.
 Otherwise surface: "Searching for handover threads for N projects (M skipped).
 Firing N×2 Slack searches."
 
+### Phase B1.5 — MCP connectivity gate
+
+Before firing Slack searches, probe connectivity with ONE call:
+`read_slack_channel_history` on `HANDOVER_CHANNEL_ID` with `limit: 1`.
+
+If it fails (tool not found, connection error, timeout):
+- Abort the backfill. Surface the MCP error and remediation steps
+  (check Cursor MCP settings, re-authorize at go/toolshed-auth).
+- Do NOT proceed to Phase B2 — every search would fail identically.
+
+If it succeeds (even empty results) → proceed.
+
 ### Phase B2 — Execute parallel searches
 
 For each entry in the manifest's `searches` array, fire **two**

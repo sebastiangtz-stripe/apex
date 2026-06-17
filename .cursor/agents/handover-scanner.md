@@ -27,22 +27,29 @@ your proposals.
 
 ### 1. Load configuration
 
-- Read `.env` for `HANDOVER_CHANNEL_ID`, `HANDOVER_CHANNEL_ID_LEGACY`, and
-  `SLACK_HANDLE`.
+- Read `.env` for `HANDOVER_CHANNEL_ID`, `HANDOVER_CHANNEL_ID_LEGACY`,
+  `HANDOVER_CHANNEL_NAME`, and `SLACK_HANDLE`.
 - Read `data/handover-state.json` for `last_scan` and `processed_threads`.
 - If `SLACK_HANDLE` is empty or `REPLACE`, return immediately with
   `{ headline: "SLACK_HANDLE not configured — handover scan skipped", proposals: [] }`.
 - If both channel IDs are empty or `REPLACE`, return
   `{ headline: "No handover channels configured — scan skipped", proposals: [] }`.
+- `HANDOVER_CHANNEL_NAME` is the human-readable channel name (e.g.
+  `amer-accelerate-handover`). Use it in `search_slack_messages` queries
+  (`in:<channel_name>`). Never use the channel ID in search queries — the
+  `in:` filter requires the human-readable name. The channel ID is only for
+  `read_slack_message_thread` / `read_slack_channel_history`.
 
 ### 2. Fetch candidate threads
 
 For each channel:
 
-1. Call the Slack MCP (e.g. `slack_search_messages` or equivalent) with a
-   query that captures the canonical phrase: `in:<channel_name>
+1. Call the Slack MCP (e.g. `search_slack_messages`) with a query that
+   captures the canonical phrase: `in:<HANDOVER_CHANNEL_NAME>
    "this one is coming to you" after:<since>`. Fall back to
    `"please review the details" after:<since>` if the first returns empty.
+   Always use `HANDOVER_CHANNEL_NAME` (not the channel ID) in the `in:`
+   filter — Slack search requires the human-readable name.
 2. For each match, build the thread key `<channel_id>/<thread_ts>`.
 3. Skip any key already present in `processed_threads` (unless `force_rescan`).
 

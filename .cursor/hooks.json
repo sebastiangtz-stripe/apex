@@ -32,7 +32,7 @@
       {
         "type": "prompt",
         "prompt": "RESEARCH PROTOCOL CHECK: You are about to use a Stripe research tool from the main thread. Stripe technical questions should be answered by /stripe-jarvis, not the main thread. If this is a Stripe technical question, STOP and invoke /stripe-jarvis instead — it owns the 3-gate system, internal search vs. WebSearch policy, the Sources section, and the skeptic pass. The main thread should only call these tools directly for non-Stripe contexts (e.g., Hubble queries, Asana, Slack scans). $ARGUMENTS",
-        "matcher": "MCP: user-toolshed_extras",
+        "matcher": "MCP:.*toolshed",
         "timeout": 5
       }
     ]
