@@ -412,14 +412,17 @@ def update_existing(proposal: dict) -> dict:
         else:
             (target / "raw").mkdir(exist_ok=True)
             comms_text = f"# Raw Comms — {proposal.get('merchant_name', slug)}\n"
+        thread_body = proposal.get("thread_body", "")
         comms_entry = (
             f"\n## [{today_iso()}] — slack — Handover thread\n"
             f"**From**: @{ae_label}\n"
             f"**Permalink**: {proposal.get('thread_permalink', '')}\n"
             f"**Direction**: Inbound\n"
             f"**Summary**: _pending_\n"
-            f"\n---\n"
         )
+        if thread_body:
+            comms_entry += f"\n{thread_body}\n"
+        comms_entry += "\n---\n"
         comms_path.write_text(comms_text + comms_entry)
 
     except OSError as e:

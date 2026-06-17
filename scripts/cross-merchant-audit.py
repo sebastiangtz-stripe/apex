@@ -414,12 +414,42 @@ def render_report(all_suspects, json_mode):
             print(f"    ... and {len(items)-8} more")
 
 
+def audit_query_overlaps(all_identities, json_mode):
+    """Check for domain overlaps across merchants' Email search queries.
+
+    Returns list of overlaps. Use before a scan to block contaminated merchants.
+    """
+    domain_to_slugs = {}
+    for slug, identity in all_identities.items():
+        for domain in identity["domains"]:
+            domain_to_slugs.setdefault(domain, []).append(slug)
+
+    overlaps = []
+    for domain, slugs in sorted(domain_to_slugs.items()):
+        if len(slugs) > 1:
+            overlaps.append({"domain": domain, "merchants": sorted(slugs)})
+
+    if json_mode:
+        print(json.dumps({"overlaps": overlaps, "blocked_slugs": sorted({s for o in overlaps for s in o["merchants"]})}, indent=2))
+    elif overlaps:
+        print(f"Found {len(overlaps)} domain overlap(s) across Email search queries:\n")
+        for o in overlaps:
+            print(f"  {o['domain']} — shared by: {', '.join(o['merchants'])}")
+        blocked = sorted({s for o in overlaps for s in o["merchants"]})
+        print(f"\nBlocked merchants (fix their Email search queries): {', '.join(blocked)}")
+    else:
+        print("No email query overlaps detected.")
+    return overlaps
+
+
 def main():
     parser = argparse.ArgumentParser(description="Detect cross-merchant contamination in raw/comms.md.")
     parser.add_argument("--slug", help="Limit audit to one merchant")
     parser.add_argument("--since", help="Only entries on/after YYYY-MM-DD")
     parser.add_argument("--suggest", action="store_true", help="Suggest correct merchant for each suspect entry")
     parser.add_argument("--json", action="store_true", help="Machine-readable JSON output")
+    parser.add_argument("--queries-only", action="store_true",
+                        help="Check for domain overlaps in Email search queries only (no comms.md scan)")
     args = parser.parse_args()
 
     all_slugs = sorted(d.name for d in PROJECTS_DIR.iterdir() if d.is_dir() and not d.name.startswith("."))
@@ -428,6 +458,10 @@ def main():
         identity = parse_project(slug)
         if identity:
             all_identities[slug] = identity
+
+    if args.queries_only:
+        overlaps = audit_query_overlaps(all_identities, args.json)
+        sys.exit(1 if overlaps else 0)
 
     target_slugs = [args.slug] if args.slug else all_slugs
     all_suspects = []

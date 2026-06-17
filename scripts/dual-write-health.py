@@ -6,7 +6,7 @@ Parses data/runbooks/dual-write-log.md (append-only, one entry per
 apply-proposals.py run) and surfaces:
 
   - Run count + clean-run rate
-  - Aggregate counts (auto-closed, created, dedup-skipped, inline patched, needs_human_review)
+  - Aggregate counts (auto-closed, created, dedup-skipped, inline gaps logged, needs_human_review)
   - Verification drift sum
   - Most recent review-queue items (medium/low confidence auto-closes that need human attention)
   - Stale items: review-queue entries older than 3 days
@@ -72,7 +72,7 @@ def parse_log():
                 "auto_closed": 0,
                 "created": 0,
                 "dedup_skipped": 0,
-                "inline_patched": 0,
+                "inline_gaps_logged": 0,
                 "needs_human_review": 0,
                 "verification_drift": 0,
                 "queue": [],
@@ -115,7 +115,7 @@ def aggregate(runs):
         "auto_closed": 0,
         "created": 0,
         "dedup_skipped": 0,
-        "inline_patched": 0,
+        "inline_gaps_logged": 0,
         "needs_human_review": 0,
         "verification_drift": 0,
         "clean_runs": 0,
@@ -126,7 +126,7 @@ def aggregate(runs):
             "auto_closed",
             "created",
             "dedup_skipped",
-            "inline_patched",
+            "inline_gaps_logged",
             "needs_human_review",
             "verification_drift",
         ):
@@ -167,7 +167,7 @@ def render_full(totals, open_queue, window_days):
     print(f"  Auto-closed:        {totals['auto_closed']}")
     print(f"  Created:            {totals['created']}")
     print(f"  Dedup-skipped:      {totals['dedup_skipped']}")
-    print(f"  Inline patched:     {totals['inline_patched']}")
+    print(f"  Inline gaps logged: {totals['inline_gaps_logged']}")
     print(f"  Needs human review: {totals['needs_human_review']}")
     print(f"  Verification drift: {totals['verification_drift']}")
     if open_queue:
