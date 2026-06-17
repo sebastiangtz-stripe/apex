@@ -54,14 +54,14 @@ exercise the full auto-startup.
 - Optional: **Hubble** access for SFDC + Kantata roster sync. The shared
   saved-query UUID is pre-filled in `.env.example`, so you don't need to
   create your own.
-- **Toolshed MCP** (pre-configured in `.cursor/mcp.json`): The workspace
-  ships with MCP server definitions that auto-start when you open in Cursor.
-  Before they work, you must authorize each tool bundle once at
-  `go/toolshed-auth` (Gmail, Slack, Calendar, Hubble, Asana). Without
-  authorization, the scan-review skill and merchant-scanner subagent will
-  not be able to fetch email or Slack — but everything else (Asana sync,
-  drift audits, action-items rollup, INDEX regeneration, lessons / recall)
-  still works.
+- **Toolshed MCP** (configured via Cursor settings, not shipped in-repo):
+  MCP servers (Gmail, Slack, Calendar, Hubble, Asana, Sourcegraph) must be
+  configured in your Cursor MCP settings. Authorize each tool bundle once at
+  `go/toolshed-auth`. Without connected MCPs, the scan-review skill and
+  merchant-scanner subagent will not be able to fetch email or Slack — but
+  everything else (Asana sync, drift audits, action-items rollup, INDEX
+  regeneration, lessons / recall) still works. The workspace validates MCP
+  connectivity before fanning out subagents (see `.cursor/rules/mcp-validation.mdc`).
 
 ## Asana board structure (one-time setup)
 

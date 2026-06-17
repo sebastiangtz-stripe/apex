@@ -13,6 +13,26 @@ Four stages: Handover sweep, Fetch + Ingest (split into LLM fetch relay and Pyth
 
 The key architectural principle: **the LLM never writes to project files during scanning.** All file writes are deterministic Python scripts. The LLM does two things: (1) call MCP tools to fetch raw data, (2) reason about what action items to create. Everything else is code.
 
+## Pre-gate: MCP connectivity check
+
+Before ANY fan-out, validate that MCP services are reachable in this Cursor
+session. This prevents spawning ~30 subagents that all fail with the same
+connection error.
+
+1. Probe Gmail: `search_gmail` with query `"in:inbox"`, `max_results: 1`.
+2. Probe Slack: `read_slack_channel_history` on `HANDOVER_CHANNEL_ID` (from
+   `.env`), `limit: 1`.
+3. If EITHER probe fails with a connection/tool-not-found error:
+   - Log the specific failure.
+   - **Abort the entire scan pipeline** (Phases 0 through 2.5).
+   - Surface the error clearly to the user with remediation steps.
+   - Return early — non-MCP startup steps (Asana reconcile, silence scan,
+     session continuity) are unaffected and should still run.
+4. If both probes return successfully (even empty results), proceed normally.
+
+This gate adds ~2 seconds but prevents the 5+ minute cascade of 37 failing
+subagent invocations.
+
 ## Phase 0: Handover sweep
 
 Before per-merchant scanning, check the handover channel(s) for any new

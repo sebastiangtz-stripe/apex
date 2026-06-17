@@ -42,7 +42,6 @@ SYNC_PATHS = [
     ".cursor/rules/",
     ".cursor/hooks/",
     ".cursor/hooks.json",
-    ".cursor/mcp.json",
     ".cursor/settings.json",
     "scripts/",
     "data/runbooks/",

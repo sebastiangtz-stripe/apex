@@ -11,7 +11,7 @@ warnings=""
 prev_date=""
 
 while IFS= read -r line; do
-  if [[ "$line" =~ ^##\ ([0-9]{4}-[0-9]{2}-[0-9]{2}) ]]; then
+  if [[ "$line" =~ ^##\ \[?([0-9]{4}-[0-9]{2}-[0-9]{2})\]? ]]; then
     current_date="${BASH_REMATCH[1]}"
     if [[ -n "$prev_date" && "$current_date" > "$prev_date" ]]; then
       warnings="${warnings}\n- Non-chronological: $current_date appears after $prev_date (entries should be newest-first)"
