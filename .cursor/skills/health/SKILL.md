@@ -51,49 +51,46 @@ Compose by delegating to existing skills + scripts in parallel where possible:
 
 ### Step 2 — Synthesize the snapshot
 
-Render in this format (fits one screen):
+Render per `response-style.mdc`: a status line using the fixed symbol set,
+humanized dates/money (`$120K`, `3d ago`, `Mon 2pm` — not raw ISO/integers),
+and **only sections that have content** (a merchant with no overdue items, no
+broken commitments, and no drafts should not show those empty headers). One
+screen. Lead symbol by state: ✅ on track · ⚠ silent 7–13d / drift · 🔴 silent
+14+d / broken commitment · ⏸ on hold · ⏳ waiting on merchant.
 
 ```
-## Health — <Merchant Display Name> (<slug>)
+## Health — <Merchant> (<slug>)
 
-**Status**: <status> | **Priority**: <priority> | **Due**: <due> | **AONR**: <aonr> | **AE**: <ae>
-
-**Headline**: <quick-context.headline>
+<symbol> <status> · <priority> · AONR <$120K> · due <Mon> · AE <name>
+<one-line headline>
 
 ### Engagement
-- Days silent: <N>d (last activity: <date>, type: <email|slack|...>)
-- Last email scan: <ts>  | Last slack scan: <ts>
+<symbol> <N>d silent — last activity <relative date> (<type>)
 
-### Action items (<open_total> open)
-- Overdue: <N> — top: [<tag>] <description> — Due <date>
-- Due this week: <N>
-- By tag: #email N, #reply N, #waiting N, #research N, ...
+### Action items (<N> open)
+- 🔴 Overdue <N> — top: <description> (due <relative>)
+- ⏳ Due this week <N>
+- By tag: <only tags with count >0 — e.g. #reply 3 · #research 1>
 
-### Broken commitments
-<list overdue lines from commitments.md, OR "none" OR "(commitments.md not yet adopted for this slug)">
+### Needs attention          ← omit this whole block if nothing below applies
+- 🔴 Broken commitment: "<promise>" — overdue <N>d
+- ⏳ Stale draft: <name> — <N>d unsent
+- ⚠ Drift: <specific>
+- ⚠ Hubble status: <X>       (only if not "In Progress")
+- ⚠ Email query: <N> contacts uncovered
 
-### Pending drafts (>7d unsent)
-<list, OR "none">
+### Recent activity
+- <relative date> — <type> — <one-line summary>   (last 3)
 
-### Drift signals
-- Local drift: <list any DRIFT lines from drift-audit matching this slug, OR "none">
-- Hubble status: <In Progress | Archived | Discovery | ...>  <flag if !=In Progress>
-- Email query coverage: <N gaps from contact-gap-audit>
+### Specialist history       ← only if prior runs exist
+<N> runs · most recent: <topic> (<relative date>)
 
-### Specialist history
-- <N> prior runs. Most recent: <topic> (<date>) — <outcome>
-  (full register: projects/active/<slug>/specialist-runs.json)
-
-### Recent activity (last 3 timeline entries)
-- <date> — <type> — <one-line summary>
-- <date> — <type> — <one-line summary>
-- <date> — <type> — <one-line summary>
-
-### Suggested next 1-3 actions
-1. <concrete action grounded in the highest-priority signal — broken commitment > overdue with merchant ask > silent>
-2. <...>
-3. <...>
+### Next step
+<one concrete action — highest-priority signal: broken commitment > overdue #reply > silent 14+d>
 ```
+
+Drop the raw scan timestamps and inline file paths from the default view —
+they're mechanics, available on "show details".
 
 ### Step 3 — Suggest one follow-up
 

@@ -50,8 +50,9 @@ Slack handover channel via `/handover-scanner` and bootstraps any new merchants 
 (folder + Asana + Hubble backfill); Phase 1 fans out `/merchant-scanner` per active
 merchant in parallel; Phase 2 fans out `/comms-analyst` per merchant with new content;
 Phase 3 does the dual-write to Asana + local for auto-closures and new action items.
-The output is the standard `## Scan & Review Summary`, now including a `New Handovers`
-section at the top when Phase 0 finds anything.
+The output is the standard `## Scan Summary` (digest table + needs-attention
+details, per CLAUDE.md → "Response Formatting — the Scan Digest"), including a
+`New Handovers` section when Phase 0 finds anything.
 
 This is the heaviest phase — expect 30-90s for a full fan-out across ~35 merchants.
 
@@ -63,38 +64,38 @@ flags against today.
 
 ## Output: single consolidated catchup summary
 
-Present **one** summary block, never piecemeal. Format:
+Present **one** block, never piecemeal, and follow `response-style.mdc` — lead
+with the digest table, then only non-empty detail sections, fold the sync
+mechanics into one muted line, humanize dates/money, and use the fixed status
+symbols. Don't expose phase numbers or script names in the output. Format:
 
 ```
-## Catchup Summary — YYYY-MM-DD
-_(Gap closed: last session YYYY-MM-DD → today, N days)_
+## Catchup — YYYY-MM-DD  ·  gap closed: Nd since last session
 
-### Phase 1: Asana reconcile
-- Asana → Local: N completions synced
-- Local → Asana: N new subtasks, N completions synced
+|                              |           |
+|------------------------------|-----------|
+| Asana writes                 | ✅ healthy |
+| New handovers                | N         |
+| New emails ingested          | N         |
+| Emails awaiting your reply   | N (M new) |
+| Waiting on merchant          | N         |
 
-### Phase 2: Hubble
-- N new projects (list slug suggestions)
-- N archive candidates (list slugs)
-- N drift items (one-line each)
+<Needs-attention details — only render sections that have content, in the
+ Tier-2 priority order from CLAUDE.md: broken commitments, CRITICAL-silent,
+ new action items, due soon / overdue, waiting on merchant, new handovers,
+ new contacts, Hubble new-projects / archive-candidates. Skip anything empty.>
 
-### Phase 3: Scan & Review
-- N merchants scanned, N had new activity
-- N auto-closed action items
-- N new action items created
-- N waiting on merchant (>3 days silent)
-- N new contacts discovered
+Synced: Asana ↔ local (N done, M new) · Hubble (N new, M archive) · index rebuilt (N active / N archived)
 
-### Phase 4: Index regenerated
-- N active, N archived
-- Top OVERDUE: <merchant> (<Nd>), <merchant> (<Nd>), ...
-- Hubble cross-check delta: N archive candidates, N new rows
-
-### Recommended next actions (top 3)
-1. <merchant>: <action> (driver: P0 / OVERDUE / commitment broken / etc.)
-2. <merchant>: <action>
-3. <merchant>: <action>
+### Next 3 actions
+1. <merchant> — <action>  (<driver: overdue / broken commitment / silent>)
+2. <merchant> — <action>
+3. <merchant> — <action>
 ```
+
+The `Synced:` line is the ops fold — one line, expand only on "show details".
+If a scan found nothing new, say so in one line ("All quiet — nothing new in
+the gap") and skip the empty detail sections entirely.
 
 ## Hard rules
 
