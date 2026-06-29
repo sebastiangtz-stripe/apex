@@ -54,7 +54,32 @@ Specialized Cursor subagents live in `.cursor/agents/`. Each has its own context
 
 **Step 0 — Fresh-workspace check (before anything else).** If the user's message is explicitly `/setup` or mentions "onboarding" or "first-time setup", skip this check and proceed directly to the setup skill. Otherwise: read `.env`. If the file is missing, OR if any value equals `REPLACE` / starts with `REPLACE_WITH`, OR if `ASANA_PAT` is empty: skip the entire auto-startup below and surface a single line — *"Workspace not configured. Run `/setup` to onboard."* Then stop and wait for the user. This prevents a cascade of agent failures on a fresh clone before the user even types anything. Do NOT run any of the steps below until `.env` is fully populated.
 
-If `.env` looks healthy, run these in **parallel** where possible:
+**Step 0.5 — MCP connectivity gate (full startup only).** After the `.env` gate passes and before running steps 1-11, probe MCP connectivity once. This is the single most common daily blocker: the `sc-2fa` token expires daily, and — separately — the MCP servers silently de-auth whenever a Cursor window has been left open for more than a day. Neither can be fixed from here, so catch it *before* fanning out child agents against dead MCPs. Make one lightweight call each: Gmail (`search_gmail`, query `"in:inbox"`, `max_results: 1`) and Slack (`read_slack_channel_history` on `HANDOVER_CHANNEL_ID`, `limit: 1`).
+
+- **Pass** (success, including empty results) → proceed to steps 1-11.
+- **Fail** (401/403, "tool not found", connection error, timeout) → **HALT the full protocol.** Do NOT run the scan, Hubble, calendar, Asana reconcile, or any child-agent fan-out. A partial startup that silently skips the scan paints a misleading "all quiet" picture — it is better to fix auth and re-run. Before halting, still run the two local-only safety signals (no MCP needed): the **pending dual-writes check** (step 7) and any `commitments.md` `Status: overdue` lines. Then surface this and wait:
+
+  ```
+  ⚠ MCP not connected — startup halted before running the daily protocol.
+
+    Gmail: [connected | FAILED: <error>]
+    Slack: [connected | FAILED: <error>]
+
+  Safety check (no MCP needed):
+    • Pending dual-writes from prior session: <N>  (run `python3 scripts/apply-proposals.py --resume` if >0)
+    • Overdue commitments: <N>
+
+  Fix MCP auth, then say "start the day" to run the full protocol:
+    1. Run `sc-2fa` in a terminal (required daily).
+    2. If this Cursor window has been open >1 day, the MCP servers silently
+       de-auth — go to Settings > MCP and toggle the Gmail/Slack servers off,
+       then back on.
+    3. Re-run "start the day".
+  ```
+
+Skip this gate on weekends (Gmail/Slack/calendar are skipped anyway — note "Weekend mode") and in **"Quick status"** mode (local-only by design — if MCP is down it still returns useful local state, so never halt it).
+
+If `.env` looks healthy and the MCP gate passes, run these in **parallel** where possible:
 
 1. Run `TZ="[YOUR_TIMEZONE]" date '+%A %Y-%m-%d %H:%M:%S %Z'` for current date/time (includes day of week). **Always use your local timezone.** Never infer the day of week — read it from the command output.
 2. **Asana reconcile**: If any `projects/active/*/asana.json` files exist, run `python3 scripts/asana-reconcile.py` to sync any changes made in Asana since last session (items completed on mobile, etc.). Skip on fresh workspace where no Asana tasks have been created yet.
@@ -63,28 +88,110 @@ If `.env` looks healthy, run these in **parallel** where possible:
 5. **Session continuity**: Read most recent `sessions/*.md` for continuity.
 6. **Hubble sync**: Invoke `/hubble-analyst`. It refreshes the snapshot if stale and returns a structured diff (new projects, archive candidates, drift). The verbose JSON stays inside the subagent.
 7. **Pending dual-writes check** (cheap filesystem scan, ~1s): list `data/scan-proposals/*.json` (one level deep, NOT including `applied/`). If any non-archived files exist, the prior session ended with proposals that did not finish applying. Read each file's `apply_status`; count items still in non-terminal states (anything other than `applied`, `skipped_dedup`, `skipped_low_confidence`, `skipped_human_review`). Surface in the startup summary as a top-priority line. Run `python3 scripts/apply-proposals.py --resume` to apply them — the script is idempotent (re-running on already-applied items is a no-op) and respects a `--max-age-days 7` guard for stale proposals. NEVER skip this check; it is the recovery path for the 2026-05-12-class failure mode where 44 dual-writes were silently lost.
-8. **Communication scan**: First run the MCP connectivity gate (see `.cursor/rules/mcp-validation.mdc`): probe Gmail and Slack with one lightweight call each. If either fails, skip the scan entirely and surface the error in the summary — do NOT fan out subagents against disconnected MCPs. If the gate passes, invoke the `scan-review` skill (full pipeline: handover sweep → fetch → ingest → review → apply). This is the core daily value — fetches new emails and Slack for all active merchants. Respects the 4-hour TTL (merchants scanned recently are skipped automatically in Phase 1a). On weekends, skip unless explicitly requested. If this step fails (MCP errors, timeouts), log the error in the summary but don't block the rest of startup.
+8. **Communication scan**: The MCP gate already ran at **Step 0.5** for full startup, so proceed directly — invoke the `scan-review` skill (full pipeline: handover sweep → fetch → ingest → review → apply). (When `scan-review` is invoked standalone — not via startup — it runs its own gate per `.cursor/rules/mcp-validation.mdc`.) This is the core daily value — fetches new emails and Slack for all active merchants. Respects the 4-hour TTL (merchants scanned recently are skipped automatically in Phase 1a). On weekends, skip unless explicitly requested. If a transient MCP error or timeout hits mid-scan (after the gate passed), log the error in the summary but don't block the rest of startup.
 9. After steps 2-8 complete, read `action-items.md` files for overdue/upcoming items (3 days), and read `commitments.md` files (where present) for any `Status: overdue` lines. In steady state, Asana is the authority for open items; local files are the backup. (During initial setup, both are populated together for the first time via `apply-proposals.py`.)
-10. Present concise summary:
- - **Pending dual-writes** (top of summary if any): "N proposals across M merchants from prior session not yet applied. Run `python3 scripts/apply-proposals.py --resume` to apply." Always surface first if non-empty — it represents work the prior session believed was committed but wasn't.
- - **Asana sync**: Changes detected by reconcile (if any)
- - **Scan results**: N merchants scanned, N new emails/threads ingested, N action items created, N auto-closed. Surface any errors from failed fetches.
- - **Today's schedule**: Meetings with merchant matches. Flag any meeting within 2h with `/meeting-prep` suggestion.
- - **Silent merchants**: Projects with no activity in 7+ days, sorted by AONR. 7-13d = "Silent", 14+d = "CRITICAL — Silent". Suggest: scan email/Slack, ping contact, check with SFDC Opportunity Owner.
- - **Overdue items**: Action items past due (informational — not top priority)
- - **Broken commitments**: Surface ANY `commitments.md` line with `Status: overdue` from any merchant. These get higher priority than overdue action items because they represent things you explicitly promised the merchant. Show as `[<slug>] promised <date>: "<promise>" (overdue Nd)`.
- - **Due soon**: Items due within 3 days
- - **Tag distribution**: Open items by tag (2+ only)
- - **On Hold**: Paused projects with reason
- - **Priority suggestions**: Per rebalancing rules below
- - **Hubble**: Surface only if `/hubble-analyst` returned non-empty `new_projects`, `archive_candidates`, or material `drift`. Non-blocking otherwise.
- - **Drift audit (weekly)**: If today is Monday OR last `data/runbooks/drift-audit-last-run.txt` mtime >7d, run `python3 scripts/drift-audit.py`. Surface any CRITICAL findings (Section A archived-but-listed, Section C hubble_pid_collisions, Section E future_timestamp). Skip otherwise.
- - **Dual-write health (last 7 days)**: Run `python3 scripts/dual-write-health.py --oneliner`. Surface only if there are pending review items, drift, or zero clean runs. Skip otherwise. This is the public-facing rollup of the resilience pipeline (Phase 6 of dual-write-resilience).
- - **Template drift (apex)**: Run `python3 scripts/sync-template.py --check`. If it reports DRIFT, surface a single-line note: *"Template drift: N template-relevant paths differ from apex. Run `python3 scripts/sync-template.py --push --message <msg>` after wrap-up."* Non-blocking; informational only.
- - **Apex updates (Mondays only)**: If today is Monday AND `data/update-check-state.json` does not exist or its `last_check_date` ≠ today: run `python3 scripts/update-from-apex.py --check`. If it reports `updates_available`, surface: *"Apex updates: N files changed, M migration(s) pending. Say 'pull updates' to review."* If `env_migrations` is non-empty, flag as action required. If `pending_migrations` > 0, flag: *"Structural migrations pending — run `python3 scripts/apply-migration.py --apply-all` after file updates."* On non-Mondays, skip unless explicitly invoked. Non-blocking; informational only.
- - **Last session**: Date, 1-sentence summary, pending count
- - **Quick actions**: 1-2 concrete next steps
-11. At scale (35+): Cap at top 10 items, summarize rest
+10. Present the summary in **three tiers**: a digest table first, then only the details that need attention, then ops telemetry only when it requires action. The goal is a clean at-a-glance read for a non-technical user — surface what they need to act on, not the machinery. Full format spec in **[Response Formatting](#response-formatting--the-scan-digest)** below.
+
+    **Tier 1 — Scan Digest (always, at the very top).** Render the canonical digest table (see Response Formatting). Core rows always present (even at 0); conditional rows appear only when non-zero/relevant.
+
+    **Tier 2 — Needs attention (only populate non-empty items).** In priority order:
+    - **Pending dual-writes** (if any): "N proposals across M merchants from prior session not yet applied. Run `python3 scripts/apply-proposals.py --resume` to apply." Always first if non-empty — work the prior session believed was committed but wasn't.
+    - **Broken commitments**: ANY `commitments.md` line with `Status: overdue`. Higher priority than overdue action items — explicit promises to the merchant. Show as `[<slug>] promised <date>: "<promise>" (overdue Nd)`.
+    - **Meetings within 2h**: flag with `/meeting-prep <slug>` suggestion.
+    - **CRITICAL — Silent (14+ days)**: list with AONR. Suggest: ping contact, check with SFDC Opportunity Owner, consider escalation.
+    - **New action items created** (from the scan): brief list.
+    - **Due soon** (≤3 days) and **Overdue** action items.
+    - **Waiting on merchant**: threads where the last message is ours, N days silent.
+    - **Silent (7-13 days)**: list, sorted by AONR.
+    - **On Hold**: paused projects with reason.
+    - **Priority suggestions**: per rebalancing rules below.
+    - **Hubble**: only if `/hubble-analyst` returned non-empty `new_projects`, `archive_candidates`, or material `drift`.
+    - **Asana sync**: changes detected by reconcile, only if any.
+
+    **Tier 3 — Ops (suppressed by default; surface a single line ONLY when action is needed).**
+    - **Asana write health**: collapses into the digest table's *Asana writes* cell — `✅ healthy` when clean; `⚠ <reason>` (e.g. "1 pending review", "drift") when not. Run `python3 scripts/dual-write-health.py --oneliner` to evaluate. Never print the full breakdown in the default view.
+    - **Template drift (apex)**: run `python3 scripts/sync-template.py --check`. If DRIFT, surface ONE line only: *"Template drift: N paths differ from apex — sync when you wrap up."* Otherwise silent.
+    - **Apex updates (Mondays only)**: if Monday AND `data/update-check-state.json` missing or `last_check_date` ≠ today, run `python3 scripts/update-from-apex.py --check`. Surface only if `updates_available`: *"Apex updates: N files, M migration(s) pending. Say 'pull updates' to review."* Flag `env_migrations` / `pending_migrations` as action-required. Otherwise silent.
+    - **Drift audit (weekly)**: if Monday OR `data/runbooks/drift-audit-last-run.txt` mtime >7d, run `python3 scripts/drift-audit.py`. Surface ONLY CRITICAL findings (Section A archived-but-listed, Section C hubble_pid_collisions, Section E future_timestamp). Otherwise silent.
+    - **Tag distribution**: not in the default view — show only if the user asks "show details" / "full breakdown".
+
+    **Footer**: **Last session** (date, 1-sentence summary, pending count) + **Quick actions** (1-2 concrete next steps).
+11. At scale (35+): Cap each Tier-2 list at top 10 items, summarize the rest ("+N more"). The digest table stays full.
+
+---
+
+## Communication Style
+
+Default to compact, outcome-first responses — full spec in [`.cursor/rules/response-style.mdc`](.cursor/rules/response-style.mdc). Three principles, always on:
+
+1. **Length scales to the action** — trivial actions (log a comm, mark done, add a contact) get one line; reserve structured writeups for scans, rollups, and investigations.
+2. **Outcome first, mechanics hidden** — lead with what happened; never narrate scripts, file paths, GIDs, phase numbers, or pipeline internals. Telemetry is opt-in (`show details`).
+3. **Colleague tone** — no preamble/postamble, plain merchant-facing language, format matched to the data shape (inline fact / bullets / table).
+
+**Guardrail — brevity yields to safety**: destructive or outward-facing actions (send, archive, delete, calendar writes), needed confirmations, and genuine risks always get the words they need.
+
+Full conventions (plain-language errors, humanized dates/money, quiet states, the fixed status-symbol set, long-op expectation lines, disambiguation pick-lists, confirmation previews) live in [`.cursor/rules/response-style.mdc`](.cursor/rules/response-style.mdc).
+
+### Help / capability discovery
+
+When the user says **"help"**, **"what can you do"**, **"what can I say"**, or seems lost, return this plain-language cheat sheet (not the internal mappings table) — group by task, show the natural phrasing, keep it to one screen:
+
+```
+Here's what I can do — just talk naturally:
+
+Mornings    "start the day"          full scan + your priorities
+            "quick status"           fast check, no email/Slack scan
+Email       "draft a follow-up for Acme about pricing"
+            "check email for Acme"   ·  "log this email" (paste it)
+Merchants   "what's happening with Acme?"  ·  "prep me for Acme"
+            "new handover" (paste the Slack thread)
+Work        "what are my priorities?"  ·  "show me all #reply items"
+            "Acme is asking about webhooks"   (I'll research it)
+Calendar    "what's on my calendar?"  ·  "am I free Thursday 2pm?"
+Wrap-up     "wrap up"                 save a session summary
+
+Say "show details" any time you want the full breakdown.
+```
+
+Adapt the merchant names to real active ones when possible. Don't dump the conversational-mappings table or internal skill names.
+
+## Response Formatting — the Scan Digest
+
+Both the daily startup summary (Auto-Startup step 10) and the standalone `scan-review` output (Phase 3) **lead with the same digest table**. It is a scannable, at-a-glance read for a user who just wants the outcome — not the machinery. Everything below the table is detail the user can act on; ops/dev telemetry is suppressed unless it needs action (see Auto-Startup Tier 3).
+
+**Audience principle**: write for a consultant who does not know the agent's internals. No script names, GIDs, phase numbers, or pipeline jargon in the digest or Tier-2 details. Counts and merchant-facing nouns only. Internal mechanics belong in logs and the wrap-up, not the daily read.
+
+### Digest table format
+
+```
+## Scan Summary — YYYY-MM-DD (Day)
+
+|                              |              |
+|------------------------------|--------------|
+| Asana writes                 | ✅ healthy   |
+| New handovers                | 2            |
+| New emails ingested          | 14           |
+| Emails awaiting your reply   | 5 (2 new)    |
+| Waiting on merchant          | 3            |
+| Meetings today               | 1 — Acme 2pm |
+| Silent 14+ days              | 2 ⚠         |
+| Action items due ≤3d         | 4            |
+```
+
+**Core rows — always present, even at 0** (a `0` is a meaningful "nothing new"):
+- **Asana writes** — `✅ healthy`, or `⚠ <reason>` when `dual-write-health.py` reports pending review / drift / zero clean runs. This is the *only* place write-health surfaces by default.
+- **New handovers** — count bootstrapped this run (Phase 0).
+- **New emails ingested** — total emails + Slack threads ingested this run.
+- **Emails awaiting your reply** — `<total> (<new> new)`. *Total* = currently-open `#reply` action items across active merchants. *New* = `#reply` items raised from mail ingested in this scan. This is inbound merchant mail **we** owe a response to (the inverse of *Waiting on merchant*).
+- **Waiting on merchant** — threads where the last message is ours and the merchant hasn't replied (from the analyst's `waiting_on_merchant`).
+
+**Conditional rows — show only when non-zero / relevant:**
+- **Pending dual-writes** — `N ⚠` when prior-session proposals are unapplied. Show as the first row when present (recovery signal); omit when 0.
+- **Meetings today** — `N — <merchant> <time>`; omit on weekends and when none.
+- **Silent 14+ days** — `N ⚠`; omit when none.
+- **Action items due ≤3d** — `N`; omit when none.
+
+Keep the table to these rows. New signals get added here only after a deliberate decision — the value of the digest is that it stays short.
 
 ---
 
@@ -98,6 +205,7 @@ Interpret intent, not rigid commands. Key mappings:
 |---|---|
 | "Good morning" / "start the day" / "daily protocol" / "let's go" | Full auto-startup (steps 0-11 including communication scan). This is the default — every new conversation runs the full pipeline. |
 | "Quick status" / "just status" | Run auto-startup WITHOUT step 8 (communication scan). Fast diagnostic only (~10s), no MCP calls to Gmail/Slack. Use when you just want to check state mid-day without waiting for scans. |
+| "help" / "what can you do" / "what can I say" | Return the plain-language capability cheat sheet (see [Communication Style → Help](#help--capability-discovery)). Don't dump the mappings table or skill names. |
 | "New project: [Merchant], [acct_id]" | Create `projects/active/<merchant-kebab>/` with template files, populate `## External Links` with the four canonical labels (`Handover:`, `Manifest:`, `Salesforce:`, `Kantata Workspace:`) — extract `Handover` (Slack permalink) + `Manifest` (admin URL) from the handover thread when handing-over from Slack; `Salesforce` + `Kantata Workspace` come from Hubble (via `hubble-reconcile.py --backfill`). Create Asana task in Integration section, save GID to `asana.json`, update INDEX.md. |
 | User pastes a Slack handover permalink / thread text OR says "here's a handover", "new handover from Slack", "set up project from handover", "/handover" | Invoke the `handover-bootstrap` skill (paste mode). It parses the thread via `scripts/handover-parse.py`, surfaces a one-line preview, then runs `scripts/handover-create.py` which creates the folder, PROJECT.md (HO+MAN+contact+AE pre-filled), Asana task, Hubble backfill, and appends to `data/handover-state.json`. End-to-end automated. |
 | "Here's the transcript from my call with [merchant]" | Save to `raw/comms.md`, summary to `timeline.md`, extract action items as Asana subtasks |

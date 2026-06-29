@@ -19,15 +19,20 @@ Before ANY fan-out, validate that MCP services are reachable in this Cursor
 session. This prevents spawning ~30 subagents that all fail with the same
 connection error.
 
+**If this skill was invoked from auto-startup, the gate already ran at Step
+0.5 — skip this probe and proceed.** Only run the probe below when `scan-review`
+is invoked standalone (e.g. the user says "scan email" mid-day).
+
 1. Probe Gmail: `search_gmail` with query `"in:inbox"`, `max_results: 1`.
 2. Probe Slack: `read_slack_channel_history` on `HANDOVER_CHANNEL_ID` (from
    `.env`), `limit: 1`.
-3. If EITHER probe fails with a connection/tool-not-found error:
+3. If EITHER probe fails with a connection/tool-not-found/401/403/timeout error:
    - Log the specific failure.
-   - **Abort the entire scan pipeline** (Phases 0 through 2.5).
-   - Surface the error clearly to the user with remediation steps.
-   - Return early — non-MCP startup steps (Asana reconcile, silence scan,
-     session continuity) are unaffected and should still run.
+   - **Abort the entire scan pipeline** (Phases 0 through 2.5) — do not fan out.
+   - Surface the Gmail/Slack status and the fix steps (run `sc-2fa`; if Cursor
+     has been open >1 day, toggle the Gmail/Slack MCP servers off/on in
+     Settings > MCP), per `.cursor/rules/mcp-validation.mdc`.
+   - Suggest re-running the scan once auth is fixed.
 4. If both probes return successfully (even empty results), proceed normally.
 
 This gate adds ~2 seconds but prevents the 5+ minute cascade of 37 failing
@@ -215,10 +220,20 @@ Render rules:
 
 Before rendering, run `python3 scripts/stale-drafts.py --threshold-days 7 --json`.
 
+**Lead with the Scan Digest table** (canonical format in CLAUDE.md → "Response Formatting — the Scan Digest"), then the detail sections below for anything that needs action. Write for a consultant who doesn't know the pipeline internals — no script names, GIDs, or phase numbers in the digest. The digest's *Emails awaiting your reply* cell is `<total open #reply across merchants> (<#reply raised this scan> new)`; *Waiting on merchant* comes from the analysts' `waiting_on_merchant`; *Asana writes* reflects the applier run (`✅ healthy`, or `⚠ <reason>` on any failed/needs-review write). Rows with no data in a standalone scan (e.g. Meetings, Silent — no calendar/silence fetch here) are simply omitted.
+
 Present in this format:
 
 ```
-## Scan & Review Summary — YYYY-MM-DD
+## Scan Summary — YYYY-MM-DD (Day)
+
+|                              |           |
+|------------------------------|-----------|
+| Asana writes                 | ✅ healthy |
+| New handovers                | 2         |
+| New emails ingested          | 14        |
+| Emails awaiting your reply   | 5 (2 new) |
+| Waiting on merchant          | 3         |
 
 ### New Handovers (N bootstrapped, M skipped)
 - [Merchant] (`<slug>`) — AE @<ae>, AONR <aonr>

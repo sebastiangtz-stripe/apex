@@ -13,9 +13,13 @@ invocation — not per-phase, not per-subagent.
 
 | Pipeline | Gate point | Services to probe |
 |----------|-----------|-------------------|
-| `scan-review` | Once, before Phase 0 (covers Phases 0 + 1a) | Gmail + Slack |
+| **Auto-startup (full)** | **Once, at Step 0.5 — after the `.env` gate, before steps 1-11** | **Gmail + Slack** |
+| `scan-review` (standalone) | Once, before Phase 0 (covers Phases 0 + 1a) | Gmail + Slack |
 | `handover-bootstrap` backfill mode | Once, before Phase B2 search fan-out | Slack |
 | `catchup` | Inherits from scan-review (Phase 3) — no separate check | — |
+
+When the gate runs at **auto-startup Step 0.5**, the standalone `scan-review`
+gate is redundant — the scan is reached only after Step 0.5 already passed.
 
 ## When NOT to validate
 
@@ -43,17 +47,42 @@ Evaluate the response:
 
 ## On failure
 
-1. Do NOT fan out subagents.
-2. Surface:
-   ```
-   MCP connectivity check failed:
-   - Gmail: [connected | FAILED: <error>]
-   - Slack: [connected | FAILED: <error>]
+Behavior depends on **where** the gate fired:
 
-   Scan aborted. MCP servers are not connected in this Cursor session.
-   Fix: Check Cursor MCP settings, re-authorize at go/toolshed-auth, or restart Cursor.
-   ```
-3. Continue with non-MCP work (Asana reconcile, silence scan, session continuity, local scripts).
+### Auto-startup Step 0.5 → HALT the full protocol
+
+Do NOT run the scan, Hubble, calendar, Asana reconcile, or any child-agent
+fan-out. Run only the two local-only safety signals first (pending dual-writes
+check + overdue commitments — neither needs MCP), then surface and wait:
+
+```
+⚠ MCP not connected — startup halted before running the daily protocol.
+
+  Gmail: [connected | FAILED: <error>]
+  Slack: [connected | FAILED: <error>]
+
+Safety check (no MCP needed):
+  • Pending dual-writes from prior session: <N>  (run `python3 scripts/apply-proposals.py --resume` if >0)
+  • Overdue commitments: <N>
+
+Fix MCP auth, then say "start the day" to run the full protocol:
+  1. Run `sc-2fa` in a terminal (required daily).
+  2. If this Cursor window has been open >1 day, the MCP servers silently
+     de-auth — go to Settings > MCP and toggle the Gmail/Slack servers off,
+     then back on.
+  3. Re-run "start the day".
+```
+
+Rationale for halting (vs. continuing with local work): an MCP auth break is
+the single most common daily blocker, and a partial startup that silently
+skips the scan reads as "all quiet" when it isn't. Fix auth, then re-run.
+
+### Standalone pipeline (`scan-review` / `handover-bootstrap` backfill) → abort that pipeline
+
+1. Do NOT fan out subagents.
+2. Surface the same Gmail/Slack status + the `sc-2fa` / toggle-MCP fix steps above.
+3. The pipeline is aborted; there is no other work to fall through to (the user
+   invoked the scan deliberately). Suggest re-running once auth is fixed.
 
 ## What counts as a failure
 

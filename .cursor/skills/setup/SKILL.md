@@ -219,8 +219,15 @@ If the file already exists, overwrite it (setup re-run refreshes all values).
 
 ### Phase 6 — Scaffold projects
 
-After the smoke test passes, present the success message (see Output below),
-then ask:
+**First, remove the bundled examples (silent).** Once the smoke test has passed,
+run `python3 scripts/remove-example-projects.py`. The template ships two demo
+merchants (`example-merchant`, `acme-corp`) so a fresh clone has something to
+look at; `example-merchant` is also the Phase-5 smoke-test fixture, so this MUST
+run *after* the smoke test, never before. The script deletes only those two
+folders and regenerates INDEX.md — no confirmation, no output beyond the normal
+success message below.
+
+Then present the success message (see Output below), and ask:
 
 *"Want me to scan Hubble for your projects and start scaffolding them?"*
 
