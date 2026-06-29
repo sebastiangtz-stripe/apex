@@ -221,6 +221,10 @@ def reconcile_project(slug, dry_run=False):
     mapping = json.loads(asana_json.read_text())
     task_gid = mapping["task_gid"]
 
+    if not task_gid or task_gid == "REPLACE" or not task_gid.isdigit():
+        print(f"  [{slug}] Skipping — task_gid is a placeholder")
+        return {"status": "placeholder_skip"}
+
     project_md = project_dir / "PROJECT.md"
     merchant_name = ""
     if project_md.exists():

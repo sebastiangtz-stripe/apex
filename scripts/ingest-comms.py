@@ -121,7 +121,12 @@ def _resolve_display_name(addr, from_field, to_field, cc_field):
         if not field:
             continue
         if addr.lower() in field.lower():
-            return extract_name(field)
+            for segment in field.split(","):
+                if addr.lower() in segment.lower():
+                    name = extract_name(segment.strip())
+                    if name and "@" not in name:
+                        return name
+                    break
     local = addr.split("@")[0]
     return local.replace(".", " ").title()
 
@@ -523,6 +528,8 @@ def ingest_staging_file(staging_path, dry_run=False):
 
             logged_cs_ids.add(sfdc_id)
             for p in non_auto_participants:
+                if p.lower() in OUTBOUND_ADDRESSES:
+                    continue
                 if p not in all_new_addresses:
                     all_new_addresses[p] = _resolve_display_name(p, from_field, to_field, cc_field)
             result["new_cs_emails"] += 1
@@ -599,6 +606,8 @@ def ingest_staging_file(staging_path, dry_run=False):
             # Track for dedup + contact discovery
             logged_email_ids.add(msg_id)
             for p in non_auto_participants:
+                if p.lower() in OUTBOUND_ADDRESSES:
+                    continue
                 if p not in all_new_addresses:
                     all_new_addresses[p] = _resolve_display_name(p, from_field, to_field, cc_field)
             result["new_emails"] += 1

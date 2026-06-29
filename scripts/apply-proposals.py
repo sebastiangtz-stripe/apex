@@ -730,7 +730,7 @@ def apply_inline_gap(item, slug, dry_run, run_report):
         return {"status": "skipped_human_review"}
 
     if dry_run:
-        run_report["inline_patched"].append(
+        run_report["inline_gaps_logged"].append(
             {"slug": slug, "id": item_id, "kind": kind, "detail": detail[:80], "dry_run": True}
         )
         return {"status": "applied", "dry_run": True}
@@ -739,7 +739,7 @@ def apply_inline_gap(item, slug, dry_run, run_report):
     patched = patch_project_contact(project_md, detail)
     if not patched:
         # Either already present (fuzzy match) or no Stripe contacts line found
-        run_report["inline_patched"].append(
+        run_report["inline_gaps_logged"].append(
             {"slug": slug, "id": item_id, "kind": kind, "detail": detail[:80], "noop": True}
         )
         return {
@@ -748,7 +748,7 @@ def apply_inline_gap(item, slug, dry_run, run_report):
             "noop_reason": "already_present_or_no_anchor",
         }
 
-    run_report["inline_patched"].append(
+    run_report["inline_gaps_logged"].append(
         {"slug": slug, "id": item_id, "kind": kind, "detail": detail[:80]}
     )
     return {"status": "applied", "applied_at": datetime.now(timezone.utc).isoformat()}
@@ -771,6 +771,8 @@ def _patch_timeline_summary(slug, ts_item):
     # Find the timeline entry by date+type or message_id
     lines = text.splitlines()
     found_idx = None
+    # Extract date prefix from entry_ref for fallback matching (e.g. "2026-06-17")
+    entry_date = entry_ref[:10] if entry_ref and len(entry_ref) >= 10 else None
     for i, line in enumerate(lines):
         if entry_ref and entry_ref in line and line.startswith("## "):
             found_idx = i
@@ -782,6 +784,12 @@ def _patch_timeline_summary(slug, ts_item):
                     found_idx = j
                     break
             break
+    # Fallback: match by date prefix if exact entry_ref didn't match
+    if found_idx is None and entry_date:
+        for i, line in enumerate(lines):
+            if line.startswith(f"## {entry_date}") and "_pending_" in "".join(lines[i:i+10]):
+                found_idx = i
+                break
 
     if found_idx is None:
         return False
@@ -984,7 +992,7 @@ def empty_run_report():
         "auto_closed": [],
         "created": [],
         "dedup_skipped": [],
-        "inline_patched": [],
+        "inline_gaps_logged": [],
         "needs_human_review": [],
         "skipped_files": [],
         "errors": [],
@@ -998,7 +1006,7 @@ def print_run_report(report, dry_run):
     print(f"  Auto-closed:        {len(report['auto_closed'])}")
     print(f"  Created:            {len(report['created'])}")
     print(f"  Dedup-skipped:      {len(report['dedup_skipped'])}")
-    print(f"  Inline patched:     {len(report['inline_patched'])}")
+    print(f"  Inline gaps logged:     {len(report['inline_gaps_logged'])}")
     print(f"  Needs human review: {len(report['needs_human_review'])}")
     if report["needs_human_review"]:
         print("\n  Needs human review:")
@@ -1032,7 +1040,7 @@ def append_dual_write_log(report, dry_run, file_count):
         f"- Auto-closed: {len(report['auto_closed'])}",
         f"- Created: {len(report['created'])}",
         f"- Dedup-skipped: {len(report['dedup_skipped'])}",
-        f"- Inline patched: {len(report['inline_patched'])}",
+        f"- Inline gaps logged: {len(report['inline_gaps_logged'])}",
         f"- Needs human review: {len(report['needs_human_review'])}",
     ]
     if report["needs_human_review"]:
@@ -1062,6 +1070,8 @@ def main():
         help="Skip post-apply verification pass (default: verify is on)",
     )
     args = parser.parse_args()
+
+    PROPOSALS_DIR.mkdir(parents=True, exist_ok=True)
 
     if not PAT and not args.dry_run:
         print("Error: ASANA_PAT not in .env")

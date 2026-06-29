@@ -174,8 +174,11 @@ Step 2: search_slack_messages(query="{ae_handle} in:{channel_name}", count=10, s
 
 If `ae_handle` is null for an entry, skip step 2 for that project.
 
-**Batching**: fire up to 10 projects per message (up to 20 MCP calls). Wait
-for results before the next batch.
+**Batching**: fire up to 3 projects per message (up to 6 MCP calls). Wait
+for results before the next batch. The Slack search API rate-limits at roughly
+5 calls per burst through the MCP proxy — exceeding this triggers a
+`RateLimitedError` with no exposed Retry-After header. If rate-limited, wait
+30 seconds then resume with smaller batches (2 per message).
 
 **Critical**: Always use the channel **name** (from manifest's `channel_name`)
 in `search_slack_messages` queries, never the channel ID. The `in:` filter
@@ -209,12 +212,20 @@ For each confirmed thread, build a proposal JSON:
   "thread_permalink": "https://stripe.slack.com/archives/{channel_id}/p{thread_ts_no_dot}",
   "channel_id": "<from manifest>",
   "thread_ts": "<from search result>",
+  "thread_body": "<full thread content as plain text — all messages concatenated>",
   "primary_contact": { "name": "...", "email": "..." },
   "ae": "<ae_handle or ae_display_name>",
   "products_hint": "<from thread content if parseable, else null>",
   "manifest_url": "<from thread content if present, else null>"
 }
 ```
+
+The `thread_body` field is built from the `read_slack_message_thread` response
+(already fetched in Phase B3). Concatenate all message texts with sender
+attribution: `@user: message text\n`. This is stored verbatim in `raw/comms.md`
+so comms-analyst has real content for summary generation. If thread fetch failed
+or was truncated, set `thread_body` to null — the script falls back to
+permalink-only entry with `Summary: _pending_`.
 
 Extract `primary_contact`, `products_hint`, and `manifest_url` from the thread
 content. Look for patterns like:

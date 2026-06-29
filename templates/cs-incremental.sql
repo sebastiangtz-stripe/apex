@@ -36,8 +36,7 @@ INNER JOIN analytics.userops_cases uc
 WHERE
     uc.assignee_email = '{{consultant_username}}@stripe.com'
     AND uc.latest_queue = 'Accelerate Core'
-    AND (uc.status NOT IN ('closed', 'resolved')
-         OR uc.closed_date > TIMESTAMP '{{since_timestamp}}')
+    AND uc.status NOT IN ('closed', 'resolved')
     AND em.message_date > TIMESTAMP '{{since_timestamp}}'
     AND (em.is_bounced IS NULL OR em.is_bounced = false)
     AND (em.is_internal_email IS NULL OR em.is_internal_email = false)

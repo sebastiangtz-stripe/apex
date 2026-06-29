@@ -454,7 +454,7 @@ def sync_project(slug, resync=False):
         custom_fields[CF["activation_quarter"]] = quarter
 
     if is_date(info["due"]) and CF["gld"]:
-        custom_fields[CF["gld"]] = info["due"]
+        custom_fields[CF["gld"]] = {"date": info["due"]}
 
     # Build task data
     task_data = {

@@ -1,5 +1,7 @@
 # Stripe Accelerate — Project Management Workspace
 
+> **Template note**: Strings like `[YOUR_NAME]`, `[YOUR_TIMEZONE]`, `[YOUR_BOARD_NAME]` are placeholders — replaced by `update-from-apex.py` using `data/update-config.json`. On a fresh workspace, run `/setup` before relying on any of these values.
+
 Conversational PM system for [YOUR_NAME], a Stripe Accelerate consultant managing 25-35 merchant projects. [YOUR_NAME] talks naturally, Claude interprets intent and manages files.
 
 **Architecture**: Asana is the project and task management layer (board: "[YOUR_BOARD_NAME]"). Local markdown stores raw communications, timelines, issues, drafts, and session logs. Cursor agents are the primary interface — no custom dashboard.
@@ -50,7 +52,7 @@ Specialized Cursor subagents live in `.cursor/agents/`. Each has its own context
 
 ## Auto-Startup Summary
 
-**Step 0 — Fresh-workspace check (before anything else).** Read `.env`. If the file is missing, OR if any value equals `REPLACE` / starts with `REPLACE_WITH`, OR if `ASANA_PAT` is empty: skip the entire auto-startup below and surface a single line — *"Workspace not configured. Run `/setup` to onboard."* Then stop and wait for the user. This prevents a cascade of agent failures on a fresh clone before the user even types anything. Do NOT run any of the steps below until `.env` is fully populated.
+**Step 0 — Fresh-workspace check (before anything else).** If the user's message is explicitly `/setup` or mentions "onboarding" or "first-time setup", skip this check and proceed directly to the setup skill. Otherwise: read `.env`. If the file is missing, OR if any value equals `REPLACE` / starts with `REPLACE_WITH`, OR if `ASANA_PAT` is empty: skip the entire auto-startup below and surface a single line — *"Workspace not configured. Run `/setup` to onboard."* Then stop and wait for the user. This prevents a cascade of agent failures on a fresh clone before the user even types anything. Do NOT run any of the steps below until `.env` is fully populated.
 
 If `.env` looks healthy, run these in **parallel** where possible:
 
@@ -62,7 +64,7 @@ If `.env` looks healthy, run these in **parallel** where possible:
 6. **Hubble sync**: Invoke `/hubble-analyst`. It refreshes the snapshot if stale and returns a structured diff (new projects, archive candidates, drift). The verbose JSON stays inside the subagent.
 7. **Pending dual-writes check** (cheap filesystem scan, ~1s): list `data/scan-proposals/*.json` (one level deep, NOT including `applied/`). If any non-archived files exist, the prior session ended with proposals that did not finish applying. Read each file's `apply_status`; count items still in non-terminal states (anything other than `applied`, `skipped_dedup`, `skipped_low_confidence`, `skipped_human_review`). Surface in the startup summary as a top-priority line. Run `python3 scripts/apply-proposals.py --resume` to apply them — the script is idempotent (re-running on already-applied items is a no-op) and respects a `--max-age-days 7` guard for stale proposals. NEVER skip this check; it is the recovery path for the 2026-05-12-class failure mode where 44 dual-writes were silently lost.
 8. **Communication scan**: First run the MCP connectivity gate (see `.cursor/rules/mcp-validation.mdc`): probe Gmail and Slack with one lightweight call each. If either fails, skip the scan entirely and surface the error in the summary — do NOT fan out subagents against disconnected MCPs. If the gate passes, invoke the `scan-review` skill (full pipeline: handover sweep → fetch → ingest → review → apply). This is the core daily value — fetches new emails and Slack for all active merchants. Respects the 4-hour TTL (merchants scanned recently are skipped automatically in Phase 1a). On weekends, skip unless explicitly requested. If this step fails (MCP errors, timeouts), log the error in the summary but don't block the rest of startup.
-9. After steps 2-8 complete, read `action-items.md` files for overdue/upcoming items (3 days), and read `commitments.md` files (where present) for any `Status: overdue` lines. Asana is the authority for open items; local files are the backup.
+9. After steps 2-8 complete, read `action-items.md` files for overdue/upcoming items (3 days), and read `commitments.md` files (where present) for any `Status: overdue` lines. In steady state, Asana is the authority for open items; local files are the backup. (During initial setup, both are populated together for the first time via `apply-proposals.py`.)
 10. Present concise summary:
  - **Pending dual-writes** (top of summary if any): "N proposals across M merchants from prior session not yet applied. Run `python3 scripts/apply-proposals.py --resume` to apply." Always surface first if non-empty — it represents work the prior session believed was committed but wasn't.
  - **Asana sync**: Changes detected by reconcile (if any)
@@ -104,7 +106,7 @@ Interpret intent, not rigid commands. Key mappings:
 | "Show me all #[tag] items" / "Batch my emails" | Read Asana subtasks, filter by tag prefix in name, grouped by parent task |
 | "Draft an email for [merchant] about [topic]" | Read context, research if needed, draft to `drafts/<topic>.md` |
 | "Archive [merchant]" / "[merchant] is live" | Complete Asana task, move to `archive/`, update INDEX.md |
-| "Find handovers" / "backfill handovers" / "search for handover threads" | Invoke `handover-bootstrap` skill (backfill mode). Runs `handover-search.py` → parallel Slack searches → `handover-create.py --update-existing`. |
+| "Find handovers" / "backfill handovers" / "search for handover threads" | Invoke `handover-bootstrap` skill (backfill mode). Runs `handover-search.py` → parallel Slack searches → `handover-create.py`. Use `--update-existing` when `projects/active/<slug>/` already exists (merges contacts, upserts links, patches TBD fields only); omit the flag for fresh creates. |
 
 ### Issue Investigation
 
@@ -170,7 +172,7 @@ Triggered when the user says "scan email", "scan Slack", "check all projects", "
 - **Phase 1a** — fans out `/merchant-scanner` fetch-relay subagents per active merchant. Each dumps raw MCP results to `data/staging/<slug>-<date>.json`. No writes to project files.
 - **Phase 1b** — runs `python3 scripts/ingest-comms.py` which deterministically processes staging files: dedup, identity gate, writes to `raw/comms.md` + `timeline.md`, updates `scan-state.json`, contact discovery.
 - **Phase 2** — fans out `/comms-analyst` per merchant with new content (read-only proposals: auto-closures, new items, Asana comments, timeline summaries, commitments).
-- **Phase 2.5** — persists proposals to `data/scan-proposals/`, then runs `python3 scripts/apply-proposals.py --resume` for all Asana + local writes.
+- **Phase 2.5** — the **parent orchestrator** (main thread or skill runner) writes each analyst's JSON response to `data/scan-proposals/<slug>-<YYYY-MM-DD>.json`, then runs `python3 scripts/apply-proposals.py --resume` for all Asana + local writes. The comms-analyst never writes files itself — it returns JSON; the caller persists it.
 
 The LLM never writes to project files during scanning — all writes go through deterministic Python scripts (`ingest-comms.py` for logging, `apply-proposals.py` for action items). This eliminates the class of bug where an LLM context crash drops in-flight writes.
 
@@ -202,7 +204,7 @@ For column mapping, saved query ID, and matching logic, see `scripts/hubble-reco
 ## Asana Integration
 
 **Board**: "[YOUR_BOARD_NAME]" (project GID in `.env`)
-**Sections**: Received, [GREEN], [YELLOW], Completed, Terminated
+**Sections**: Discovered by `setup-discover-asana.py` and stored in `.env` as `ASANA_SECTION_*` vars. Typical names: Discovery, Integration, Testing, Go-Live, Live, On Hold. Always read section GIDs from `.env` — never hardcode names. Status→section mapping is handled by `sync-to-asana.py`.
 **Tasks**: One per merchant with custom fields.
 **Subtasks**: Action items. Name format: plain action-verb description (e.g. `Send revised contract to ABC Co`). Tag is set as the Asana custom field on the subtask, not in the name. Due dates set on subtask.
 
@@ -345,7 +347,7 @@ Guidelines:
 
 - Parallel when independent, sequential when dependent — for fan-outs (scanner, analyst), issue all calls in a single message.
 - Subagents return small structured summaries; main thread executes any writes that require Asana/local dual-write.
-- Cap concurrent fan-outs at ~10 in any single message.
+- Cap concurrent fan-outs at ~10 foreground (blocking) subagents per message. For background (non-blocking) fan-outs like merchant-scanner or comms-analyst, cap at ~15 per message since the parent isn't waiting.
 
 ---
 

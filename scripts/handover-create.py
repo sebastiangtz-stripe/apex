@@ -412,14 +412,17 @@ def update_existing(proposal: dict) -> dict:
         else:
             (target / "raw").mkdir(exist_ok=True)
             comms_text = f"# Raw Comms — {proposal.get('merchant_name', slug)}\n"
+        thread_body = proposal.get("thread_body", "")
         comms_entry = (
             f"\n## [{today_iso()}] — slack — Handover thread\n"
             f"**From**: @{ae_label}\n"
             f"**Permalink**: {proposal.get('thread_permalink', '')}\n"
             f"**Direction**: Inbound\n"
             f"**Summary**: _pending_\n"
-            f"\n---\n"
         )
+        if thread_body:
+            comms_entry += f"\n{thread_body}\n"
+        comms_entry += "\n---\n"
         comms_path.write_text(comms_text + comms_entry)
 
     except OSError as e:
@@ -476,9 +479,20 @@ def bootstrap(proposal: dict) -> dict:
         (target / "action-items.md").write_text(
             f"# Action Items — {proposal['merchant_name']}\n\n## Open\n\n## Completed\n"
         )
-        (target / "raw" / "comms.md").write_text(
-            f"# Raw Comms — {proposal['merchant_name']}\n"
+        ae_label = proposal.get("ae", "unknown")
+        thread_body = proposal.get("thread_body", "")
+        comms_text = f"# Raw Comms — {proposal['merchant_name']}\n"
+        comms_entry = (
+            f"\n## [{today_iso()}] — slack — Handover thread\n"
+            f"**From**: @{ae_label}\n"
+            f"**Permalink**: {proposal.get('thread_permalink', '')}\n"
+            f"**Direction**: Inbound\n"
+            f"**Summary**: _pending_\n"
         )
+        if thread_body:
+            comms_entry += f"\n{thread_body}\n"
+        comms_entry += "\n---\n"
+        (target / "raw" / "comms.md").write_text(comms_text + comms_entry)
         (target / "scan-state.json").write_text(render_scan_state())
     except OSError as e:
         return {"ok": False, "exit": 3, "error": f"Filesystem error: {e}"}

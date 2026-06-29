@@ -60,9 +60,14 @@ Only Phase 0 proposals can trigger project bootstrapping.
 
 ## Phase 0.5: Cross-merchant contamination check
 
-Run `python3 scripts/cross-merchant-audit.py --json` (~2s, read-only). If it
-returns suspect entries, surface them in the final triage summary under a
-`Cross-merchant Contamination` section. Do not auto-move entries.
+Two sub-checks:
+
+1. **Query overlap audit** (pre-scan gate): Run `python3 scripts/cross-merchant-audit.py --queries-only --json`.
+   If it returns overlaps, the listed `blocked_slugs` must be **excluded from Phase 1a fan-out** until their
+   Email search queries are fixed. Surface the overlaps in the triage summary. Clean merchants proceed normally.
+2. **Comms contamination audit** (post-ingest diagnostic): Run `python3 scripts/cross-merchant-audit.py --json`
+   after Phase 1b. If it returns suspect entries, surface them in the final triage summary under a
+   `Cross-merchant Contamination` section. Do not auto-move entries.
 
 ## Phase 1a-pre: Case Studio fetch (Core projects only)
 
@@ -109,6 +114,12 @@ Notes:
    Exception: if the user explicitly requested this scan (e.g. "scan email", "scan all",
    "re-scan") rather than auto-startup, bypass the TTL and scan all eligible projects
    regardless of `last_email_scan` timestamp.
+   **First-run behavior**: If `scan-state.json` is missing or `last_email_scan` is null,
+   this is the first scan for this merchant. Default `email_since` to the project's
+   `Started` date from `hubble.json` (minus 7 days buffer), or 90 days ago, whichever
+   is more recent. If `hubble.json` is missing entirely, use 90 days ago.
+   For `slack_since`, default to 30 days ago. These defaults prevent
+   unbounded historical fetches while capturing the active engagement window.
 4. **Construct email_query** (never skip a merchant just because Email search is TBD):
    - If `Email search` in PROJECT.md is populated and not "TBD" → use it as-is.
    - Else if `primary_contact_email` exists in `hubble.json`:
@@ -154,7 +165,7 @@ The script outputs JSON to stdout with per-merchant stats. Parse this to know wh
 
 ## Phase 2: Review
 
-For each merchant where `new_emails + new_cs_emails + new_slack_threads > 0` in the ingest report:
+For each merchant where `new_emails + new_cs_emails + new_slack_threads > 0` in the ingest report, OR where the project was bootstrapped in this session (first scan — needs intro email action item even with 0 ingested comms):
 
 1. Fan out one `/comms-analyst` invocation per merchant **in parallel**.
 2. Each subagent returns proposals: `{ auto_close[], new_items[], waiting_on_merchant[], commitments[], dedupe_skipped[], inline_gaps[], asana_comments[], timeline_summaries[] }`.
