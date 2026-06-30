@@ -48,7 +48,6 @@ SYNC_PATHS = [
     "data/lessons-learned/README.md",
     "templates/emails/",
     "CLAUDE.md",
-    "CLAUDE.md.pre-trim-notes.md",
     ".env.example",
 ]
 

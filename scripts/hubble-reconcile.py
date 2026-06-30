@@ -3,8 +3,9 @@ from __future__ import annotations
 """
 Reconcile local merchant projects with the Hubble snapshot (SFDC + Kantata source of truth).
 
-The agent writes data/hubble-snapshot.json by running the predetermined saved query
-(stripe/c5619e62) via run_hubble_query MCP tool and filtering results locally.
+The agent writes data/hubble-snapshot.json by running the tuned SQL template
+(templates/hubble-query.sql, {{LEAD_FILTER}} substituted) via run_hubble_query
+MCP tool and filtering results locally.
 This script reads that snapshot and diffs against projects/active/ + projects/archive/.
 
 Match order per Hubble row:

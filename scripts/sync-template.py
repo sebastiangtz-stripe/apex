@@ -54,7 +54,6 @@ SYNC_PATHS = [
     "data/lessons-learned/README.md",
     "templates/emails/",
     "CLAUDE.md",
-    "CLAUDE.md.pre-trim-notes.md",
 ]
 
 # Rsync excludes applied within SYNC_PATHS
@@ -64,8 +63,7 @@ RSYNC_EXCLUDES = [
     "*.pyo",
     ".DS_Store",
     "drift-audit-last-run.txt",
-    "obsidian-sync.md",
-    "obsidian-sync.py",
+    "dual-write-log.md",  # workspace-local audit log with real merchant entries — never sync
     "e2e-test-*.md",
 ]
 
@@ -331,8 +329,6 @@ LEAK_SCAN_ALLOWLIST = {
 LEAK_SCAN_FILE_EXCLUDES = {
     "scripts/sync-template.py",   # contains the denylist constants by definition
     "data/runbooks/template-sync.md",  # documents the protocol, references author names
-    "data/runbooks/dual-write-log.md",  # operational log with real merchant entries
-    "CLAUDE.md.pre-trim-notes.md",  # design history, references real merchants in past tense
 }
 
 # ── Helpers ──────────────────────────────────────────────────────────────────

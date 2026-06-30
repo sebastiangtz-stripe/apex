@@ -48,7 +48,7 @@ live workspaces.
 | `data/runbooks/` | YES | All runbooks (including this one) |
 | `data/lessons-learned/README.md` | YES | README only — actual lessons stay local |
 | `templates/emails/` | YES | Email templates |
-| `CLAUDE.md`, `CLAUDE.md.pre-trim-notes.md` | YES | Top-level conversational context + design history |
+| `CLAUDE.md` | YES | Top-level conversational context |
 | `.env.example`, `.gitignore`, `README.md`, `SETUP.md` | YES | Top-level scaffolding |
 | `projects/active/example-merchant/` | YES | Worked example only |
 | `_inbox/.gitkeep`, `ideas/INDEX.md`, `sessions/INDEX.md` | YES | Empty scaffolds |
