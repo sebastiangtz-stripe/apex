@@ -236,9 +236,10 @@ Options: `Yes` / `Not now`
 - **Yes** — invoke `/hubble-analyst`. Then scaffold projects in this exact order:
   1. Run `python3 scripts/scaffold-from-hubble.py --apply` to create all folders + PROJECT.md with Email search and Key Contacts pre-filled from Hubble contacts.
   2. Run `python3 scripts/hubble-reconcile.py --backfill` to populate External Links, AONR, dates, and any remaining contact fields.
-  3. For each new project, search the handover channel (`HANDOVER_CHANNEL_ID`) by merchant name or AE name. If a thread is found, parse it via `scripts/handover-parse.py` to get a proposal JSON, then run `python3 scripts/handover-create.py --proposal-stdin --update-existing` to merge contacts, Handover permalink, and set `scan_source: core`.
-  4. Run `python3 scripts/sync-to-asana.py` to create Asana tasks — **only after** steps 1-3 so descriptions are fully populated.
-  Confirm each batch before proceeding (don't run all 4 steps silently).
+  3. **Backfill handovers via the `handover-bootstrap` skill (backfill mode) — not the read-only `/handover-scanner` relay.** The skill runs the full deterministic pipeline (wide channel read → `handover-parse.py` → `handover-match.py --coverage` → one batched `python3 scripts/handover-create.py --proposals-stdin --update-existing`), which merges contacts, the Handover permalink + Manifest URL, and sets `scan_source: core` on every matched project. **Step 3 is complete only when `handover-create.py` has actually run** and the coverage matcher has reported its `covered` / `missing` split — do **not** treat a subagent's natural-language summary as completion. Projects in `missing` (no clean signal in the channel) legitimately keep `Handover: TBD`; that is expected, not a failure.
+  4. **Verify before syncing:** confirm step 3 wrote the links — `grep -L "Handover: TBD" projects/active/*/PROJECT.md` should now list the `covered` projects, and the remaining `TBD` set should match the coverage report's `missing`. Only proceed once this lines up.
+  5. Run `python3 scripts/sync-to-asana.py` to create Asana tasks — **only after** steps 1-4 so descriptions are fully populated. If tasks were already created in an earlier or interrupted pass, re-run with `--resync` — it now updates existing tasks **in place** (patches notes/links/fields) rather than creating duplicates.
+  Confirm each batch before proceeding (don't run all steps silently).
 - **Not now** — exit cleanly.
 
 ## Output
