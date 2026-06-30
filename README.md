@@ -12,16 +12,18 @@ clones it, fills in `.env`, and starts adding their own projects under
 
 ## What's in here
 
-- **`.cursor/agents/`** — 5 subagents with isolated context windows
+- **`.cursor/agents/`** — 6 subagents with isolated context windows
   - `merchant-scanner` — incremental Gmail + Slack scan per merchant
   - `comms-analyst` — read-only proposal of auto-closures + new action items
-  - `hubble-analyst` — SFDC/Kantata snapshot refresh + diff
+  - `hubble-analyst` — Hubble snapshot refresh + diff
+  - `handover-scanner` — reads the Slack handover channel(s) and classifies new threads against the roster
   - `stripe-jarvis` — Stripe technical research (Tier 1/2/3 framework)
   - `quick-context` — fast headline lookup
-- **`.cursor/skills/`** — 15 orchestrated PM workflows
-  - Daily ops: `catchup`, `scan-review`, `meeting-prep`, `email-agent`, `log-comms`, `health`, `action-items`
+- **`.cursor/skills/`** — 18 orchestrated PM workflows
+  - Daily ops: `catchup`, `scan-review`, `meeting-prep`, `email-agent`, `log-comms`, `health`, `action-items`, `handover-bootstrap`
   - Hygiene: `drift-audit`, `contact-gap-audit`, `index-reconciler`, `test-subagents`
-  - Knowledge: `lessons-extract`, `recall`, `specialist-prompt`, `weekly-metrics`
+  - Knowledge: `lessons-extract`, `recall`, `specialist-prompt`, `weekly-metrics`, `compass-update`
+  - Onboarding: `setup`
 - **`.cursor/rules/`** — always-applied conventions (action items format, email drafting, PM workspace, research protocol, scan protocol)
 - **`.cursor/hooks/`** — file-shape validators that fire on edit (action-items, timeline, PROJECT.md, scan-state, drafts)
 - **`scripts/`** — Python automation: Asana ↔ local reconcile, Hubble ingest, drift audit, contact gap audit, action-items rollup, weekly metrics, INDEX regeneration, contract validation
@@ -72,7 +74,7 @@ Asana board → first scan).
 ## Status
 
 Template extracted from a live workspace running ~35 active merchant projects.
-All 25 agent/skill/rule contracts pass static validation
+All 32 agent/skill/rule contracts pass static validation
 (`python3 scripts/test-subagents.py`).
 
 ## License

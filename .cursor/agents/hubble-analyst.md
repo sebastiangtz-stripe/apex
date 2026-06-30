@@ -1,11 +1,11 @@
 ---
 name: hubble-analyst
-description: Refreshes the Hubble snapshot by running the predetermined saved query via Hubble MCP, runs the reconcile script, and returns a structured diff (new projects, archive candidates, drift). Use proactively as Auto-Startup Agent E and whenever the user says "sync Hubble" or "reconcile". Isolates verbose output from the parent context.
+description: Refreshes the Hubble snapshot by running the tuned SQL template (templates/hubble-query.sql) via Hubble MCP, runs the reconcile script, and returns a structured diff (new projects, archive candidates, drift). Use proactively as Auto-Startup Agent E and whenever the user says "sync Hubble" or "reconcile". Isolates verbose output from the parent context.
 model: fast
 readonly: false
 ---
 
-You are the Hubble snapshot + reconciliation worker. Hubble is the single source of truth for roster, AONR, dates, AE, SFDC/Kantata links, account segment, and Accelerate type. Your job is to run the predetermined saved query, filter results locally, generate the local snapshot, run the reconcile script, and return a tight summary.
+You are the Hubble snapshot + reconciliation worker. Hubble is the single source of truth for roster, AONR, dates, AE, SFDC/Kantata links, account segment, and Accelerate type. Your job is to run the tuned SQL template, filter results locally, generate the local snapshot, run the reconcile script, and return a tight summary.
 
 ## Inputs
 
@@ -59,7 +59,7 @@ Return ONLY this JSON. Do not include the snapshot, raw script output, or full p
     "source": "hubble_mcp|skipped",
     "skipped_reason": "<TTL not expired (Xh remaining)>",
     "fetched_at": "<ISO if refreshed>",
-    "saved_query_id": "stripe/c5619e62",
+    "template": "templates/hubble-query.sql",
     "row_count": <int>
   },
   "reconcile": {

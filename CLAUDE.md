@@ -277,6 +277,7 @@ Runs at the start of every session as part of auto-startup (Agent A above), and 
 
 Triggered when the user says "scan email", "scan Slack", "check all projects", "review open items", or "what's new". Owned by the `scan-review` skill (`.cursor/skills/scan-review/SKILL.md`):
 
+- **Phase 1a-pre (Case Studio — Accelerate Core merchants only)** — for projects with `scan_source: core` in PROJECT.md, merchant email lives in Salesforce Case Studio rather than the consultant's inbox. This phase renders `templates/cs-incremental.sql` (substituting `{{consultant_username}}` from `.env` `CONSULTANT_USERNAME` and the last-scan timestamp), runs it via `run_hubble_query`, then `python3 scripts/fetch-cs.py` routes each case to its merchant via `data/case-merchant-map.json` and writes per-merchant staging files. Cases that match no mapping are surfaced for `python3 scripts/manage-case-map.py --add <case_id> <slug>`. State lives in `data/cs-scan-state.json`. Output feeds Phase 1b's ingest exactly like Gmail/Slack staging. Skipped entirely for merchants without `scan_source: core`.
 - **Phase 1a** — fans out `/merchant-scanner` fetch-relay subagents per active merchant. Each dumps raw MCP results to `data/staging/<slug>-<date>.json`. No writes to project files.
 - **Phase 1b** — runs `python3 scripts/ingest-comms.py` which deterministically processes staging files: dedup, identity gate, writes to `raw/comms.md` + `timeline.md`, updates `scan-state.json`, contact discovery.
 - **Phase 2** — fans out `/comms-analyst` per merchant with new content (read-only proposals: auto-closures, new items, Asana comments, timeline summaries, commitments).
@@ -312,7 +313,7 @@ For column mapping, saved query ID, and matching logic, see `scripts/hubble-reco
 ## Asana Integration
 
 **Board**: "[YOUR_BOARD_NAME]" (project GID in `.env`)
-**Sections**: Discovered by `setup-discover-asana.py` and stored in `.env` as `ASANA_SECTION_*` vars. Typical names: Discovery, Integration, Testing, Go-Live, Live, On Hold. Always read section GIDs from `.env` — never hardcode names. Status→section mapping is handled by `sync-to-asana.py`.
+**Sections**: Discovered by `setup-discover-asana.py` and stored in `.env` as `ASANA_SECTION_*` vars keyed by the board's actual section names (`ASANA_SECTION_RECEIVED`, `_GREEN`, `_YELLOW`, `_COMPLETED`, `_TERMINATED`). `sync-to-asana.py` maps each project's lifecycle status (Discovery, Integration, Testing, Go-Live, Live, On Hold) onto those section GIDs. Always read section GIDs from `.env` — never hardcode names.
 **Tasks**: One per merchant with custom fields.
 **Subtasks**: Action items. Name format: plain action-verb description (e.g. `Send revised contract to ABC Co`). Tag is set as the Asana custom field on the subtask, not in the name. Due dates set on subtask.
 
