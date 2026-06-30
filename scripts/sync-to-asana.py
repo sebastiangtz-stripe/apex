@@ -7,7 +7,7 @@ Saves mapping to projects/active/<slug>/asana.json.
 Usage:
   python3 scripts/sync-to-asana.py                # sync all unsynced projects
   python3 scripts/sync-to-asana.py --slug example-merchant     # sync a single project
-  python3 scripts/sync-to-asana.py --resync        # re-sync all (overwrite existing)
+  python3 scripts/sync-to-asana.py --resync        # re-sync all (update existing tasks in place)
 """
 
 import json
@@ -456,6 +456,47 @@ def sync_project(slug, resync=False):
     if is_date(info["due"]) and CF["gld"]:
         custom_fields[CF["gld"]] = {"date": info["due"]}
 
+    # ── Update-in-place vs. create ───────────────────────────────────────────
+    # On --resync, patch the existing task instead of creating a duplicate.
+    # (Without --resync, existing tasks were already short-circuited above.)
+    # This is the recovery path when PROJECT.md changed after the task was
+    # created — most importantly when External Links (Handover/Manifest) were
+    # backfilled post-creation and need to reach the live task.
+    existing_gid = ""
+    if asana_json.exists():
+        try:
+            existing_gid = str(json.loads(asana_json.read_text()).get("task_gid") or "")
+        except (json.JSONDecodeError, OSError):
+            existing_gid = ""
+        if not (existing_gid and existing_gid != "REPLACE" and existing_gid.isdigit()):
+            existing_gid = ""
+        # A GID in asana.json can be stale (task deleted on the board). Verify
+        # before patching; if it's gone, fall through to create a fresh task.
+        if existing_gid and api("GET", f"/tasks/{existing_gid}?opt_fields=gid") is None:
+            existing_gid = ""
+
+    if existing_gid:
+        # Patch mutable fields only. Do NOT resend workspace/projects, and do
+        # NOT recreate subtasks here — asana-reconcile.py owns subtask sync, so
+        # re-POSTing them would duplicate. Section moves on status change are
+        # likewise left to reconcile; this path exists to push refreshed
+        # PROJECT.md content (notably External Links) onto the live task.
+        update_data = {
+            "name": info["name"],
+            "notes": build_description(info),
+            "custom_fields": custom_fields,
+        }
+        if is_date(info["due"]):
+            update_data["due_on"] = info["due"]
+            if is_date(info["started"]):
+                update_data["start_on"] = info["started"]
+        print(f"  [{slug}] Updating task {existing_gid} in place...", end=" ")
+        if api("PUT", f"/tasks/{existing_gid}", {"data": update_data}) is None:
+            print("FAILED")
+            return "failed"
+        print("OK")
+        return "updated"
+
     # Build task data
     task_data = {
         "name": info["name"],
@@ -518,7 +559,7 @@ def main():
     import argparse
     parser = argparse.ArgumentParser(description="Sync projects to Asana")
     parser.add_argument("--slug", help="Sync a single project by slug")
-    parser.add_argument("--resync", action="store_true", help="Re-sync even if already synced")
+    parser.add_argument("--resync", action="store_true", help="Re-sync even if already synced — updates existing tasks in place (never duplicates)")
     args = parser.parse_args()
 
     if args.slug:
@@ -531,13 +572,13 @@ def main():
 
     print(f"Syncing {len(slugs)} project(s) to Asana board {PROJECT_GID}\n")
 
-    stats = {"created": 0, "skipped": 0, "failed": 0}
+    stats = {"created": 0, "updated": 0, "skipped": 0, "failed": 0}
     for slug in slugs:
         result = sync_project(slug, resync=args.resync)
         stats[result] = stats.get(result, 0) + 1
 
     subtotal = sum(stats.values())
-    print(f"\nDone: {stats['created']} created, {stats['skipped']} skipped, {stats['failed']} failed ({subtotal} total)")
+    print(f"\nDone: {stats['created']} created, {stats['updated']} updated, {stats['skipped']} skipped, {stats['failed']} failed ({subtotal} total)")
     if stats["failed"]:
         sys.exit(1)
 
