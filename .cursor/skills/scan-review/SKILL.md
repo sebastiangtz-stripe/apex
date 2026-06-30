@@ -43,17 +43,25 @@ subagent invocations.
 Before per-merchant scanning, check the handover channel(s) for any new
 merchants that need a project bootstrapped.
 
-1. Invoke `/handover-scanner` with no args. It reads `.env` for the channel
-   IDs + the user's Slack handle, dedups against
-   `data/handover-state.json::processed_threads`, parses any new candidate
-   threads through `scripts/handover-parse.py`, and returns
-   `{ proposals: [], skipped: [], errors: [], headline }`.
+1. Invoke `/handover-scanner` with no args. It **reads** the channel(s) by ID
+   from `.env` (`read_slack_channel_history` — never name-based search), dedups
+   against `data/handover-state.json::processed_threads`, parses new candidate
+   threads through `scripts/handover-parse.py`, classifies them against the
+   roster via `scripts/handover-match.py`, and returns
+   `{ proposals: [], triage: [], skipped: [], errors: [], headline, scan_window }`.
 2. If `proposals` is non-empty, hand them to the `handover-bootstrap` skill
    (scan mode — proposals are already structured, no re-parsing). The skill
    surfaces a one-line preview per proposal, then runs
    `scripts/handover-create.py` against each.
-3. Hold the per-bootstrap results for the final summary's `New Handovers`
-   section. If `proposals` is empty, this phase is a silent no-op.
+3. If `triage` is non-empty, **surface it in the summary — do not drop it**:
+   "Handovers needing triage: N handover-shaped thread(s) not matched to your
+   roster" with the merchant guess + permalink for each. These are NOT
+   auto-bootstrapped (see guardrail); the user decides.
+4. Hold the per-bootstrap results + triage list for the final summary's `New
+   Handovers` section. This phase is a silent no-op **only** when the scanner
+   read messages but found nothing handover-shaped AND triage is empty — if the
+   `headline` reports messages-read-but-zero-found, relay it rather than implying
+   "all quiet".
 
 Important: Phase 0 runs **before** Phase 1's `ls projects/active/` so any
 projects bootstrapped here are immediately visible to the per-merchant scan.

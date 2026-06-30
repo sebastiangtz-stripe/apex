@@ -1,0 +1,12 @@
+{
+  "channel_id": "C0TEST1234",
+  "thread_ts": "1773769322.596429",
+  "permalink": "https://test-workspace.slack.com/archives/C0TEST1234/p1773769322596429",
+  "messages": [
+    {
+      "user_name": "Account Manifest Bot",
+      "text": "From @testae: Hi team, introducing Globex Imports\n       - SFDC: <https://stripe.lightning.force.com/lightning/r/Opportunity/006TESTOPPTY12345/view>\n       - Manifest: <https://admin.corp.stripe.com/account-manifest/accma_test123abc456>\n       - Contact: Rae Holt - <mailto:rholt@globex.example.com|rholt@globex.example.com>\n       - Territory: AMER SML",
+      "ts": "1773769322.596429"
+    }
+  ]
+}

@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 """
-Prepare a search manifest for batch handover backfill.
+Prepare a match manifest for batch handover backfill.
 
-Reads local project state + Hubble snapshot and outputs a JSON manifest of
-Slack search parameters the agent needs to fire via MCP. Does NOT call Slack
-itself — the agent executes the searches and feeds results back to
-handover-create.py --update-existing.
+Reads local project state + Hubble snapshot and outputs a JSON manifest of the
+projects still missing a handover link, each with its cleaned project_name and
+best-effort AE handle. Does NOT call Slack itself.
 
-Two-step search algorithm per merchant:
-  Step 1: search_slack_messages(query="{project_name} in:{channel_name}")
-  Step 2: search_slack_messages(query="{ae_handle} in:{channel_name}")
+The caller reads the handover channel BY ID via read_slack_channel_history and
+filters that history to these projects in code — by merchant name, AE handle, or
+SFDC opportunity id. It does NOT use search_slack_messages or any `in:<name>`
+filter: the human-readable channel name does not reliably resolve as a Slack
+search target, which previously zeroed retrieval. Channel ID always resolves.
 
-Both fire in parallel. Step 1 is the primary signal (merchant name in thread);
-Step 2 is the recovery path (AE handle, best-effort derivation).
+Per merchant the manifest provides two filter signals:
+  - project_name : primary signal (merchant name appears in the thread).
+  - ae_handle    : recovery signal (the AE who initiated the handover).
 
 Usage:
   python3 scripts/handover-search.py              # all active projects
@@ -29,8 +31,13 @@ import argparse
 import json
 import re
 import sys
-import unicodedata
 from pathlib import Path
+
+from _name_match import (
+    clean_project_name,
+    name_similarity,
+    strip_diacritics,
+)
 
 WORKSPACE_ROOT = Path(__file__).resolve().parent.parent
 ACTIVE_DIR = WORKSPACE_ROOT / "projects" / "active"
@@ -38,15 +45,6 @@ SNAPSHOT_PATH = WORKSPACE_ROOT / "data" / "hubble-snapshot.json"
 STATE_FILE = WORKSPACE_ROOT / "data" / "handover-state.json"
 HANDLES_FILE = WORKSPACE_ROOT / "data" / "ae-handles.json"
 ENV_FILE = WORKSPACE_ROOT / ".env"
-
-NOISE_PATTERN = re.compile(r"[\-\s]*[\[\#\(].*$")
-TRAILING_NOISE = re.compile(
-    r"[\-\s]+(US|AMER|EMEA|APAC|LATAM|"
-    r"\$\d+[KkMm]?|"
-    r"\d+[KkMm])"
-    r"$",
-    re.IGNORECASE,
-)
 
 
 # ── Env ──────────────────────────────────────────────────────────────────────
@@ -75,11 +73,6 @@ def load_confirmed_handles() -> dict[str, str]:
     return {}
 
 
-def strip_diacritics(text: str) -> str:
-    nfkd = unicodedata.normalize("NFKD", text)
-    return "".join(c for c in nfkd if not unicodedata.combining(c))
-
-
 def derive_ae_handle(display_name: str, confirmed: dict[str, str]) -> tuple[str | None, str]:
     """
     Derive a Slack handle from an AE display name.
@@ -101,17 +94,6 @@ def derive_ae_handle(display_name: str, confirmed: dict[str, str]) -> tuple[str 
     handle = first_initial + last_name
     handle = re.sub(r"[^a-z0-9]", "", handle)
     return handle, "derived"
-
-
-# ── Project name cleaning ────────────────────────────────────────────────────
-
-
-def clean_project_name(raw_name: str) -> str:
-    """Strip bracket/noise suffixes from a Hubble project_name for search."""
-    name = raw_name.strip()
-    name = NOISE_PATTERN.sub("", name)
-    name = TRAILING_NOISE.sub("", name)
-    return name.strip(" -")
 
 
 # ── State helpers ────────────────────────────────────────────────────────────
@@ -151,35 +133,6 @@ def get_project_id_from_hubble_json(project_dir: Path) -> int | None:
         return None
 
 
-# ── Fuzzy matching (for projects without hubble.json) ────────────────────────
-
-
-NAME_STOPWORDS = {
-    "the", "inc", "llc", "corp", "co", "ltd", "gmbh", "sa", "us", "usa", "uk",
-    "payments", "payment", "billing", "connect", "terminal", "standard",
-}
-
-
-def norm_name(text: str) -> str:
-    if not text:
-        return ""
-    s = text.lower()
-    s = re.sub(r"[\[\](){}\|,;:\+\/\\]", " ", s)
-    s = re.sub(r"[\-–—]", " ", s)
-    s = re.sub(r"[^a-z0-9\s]", " ", s)
-    tokens = [t for t in s.split() if t and t not in NAME_STOPWORDS and len(t) > 1]
-    return " ".join(tokens)
-
-
-def name_similarity(a: str, b: str) -> float:
-    a_tokens = set(norm_name(a).split())
-    b_tokens = set(norm_name(b).split())
-    if not a_tokens or not b_tokens:
-        return 0.0
-    overlap = a_tokens & b_tokens
-    return len(overlap) / min(len(a_tokens), len(b_tokens))
-
-
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 
@@ -195,12 +148,8 @@ def main():
 
     # ── Load config ──
     env = load_env()
-    channel_name = env.get("HANDOVER_CHANNEL_NAME", "").strip()
     channel_id = env.get("HANDOVER_CHANNEL_ID", "").strip()
 
-    if not channel_name or channel_name == "REPLACE":
-        print(json.dumps({"error": "HANDOVER_CHANNEL_NAME not set in .env"}))
-        sys.exit(1)
     if not channel_id or channel_id == "REPLACE":
         print(json.dumps({"error": "HANDOVER_CHANNEL_ID not set in .env"}))
         sys.exit(1)
@@ -305,8 +254,11 @@ def main():
         searches.append(entry)
 
     # ── Output ──
+    # The manifest lists which projects to look for and their AE handles. The
+    # caller reads the channel BY ID (read_slack_channel_history) and filters the
+    # history to these projects in code by name / AE / SFDC opp — no name-based
+    # search_slack_messages.
     result = {
-        "channel_name": channel_name,
         "channel_id": channel_id,
         "searches": searches,
         "skipped": skipped,

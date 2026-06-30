@@ -38,6 +38,9 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _name_match import slugify  # noqa: E402
+
 
 # ── Patterns ──────────────────────────────────────────────────────────────────
 
@@ -50,6 +53,12 @@ INTRODUCING_RE = re.compile(
     r"introducing\s+(.+?)\s*-\s*\[([^\]]+)\]",
     re.IGNORECASE,
 )
+# Legacy bracket-less form: "introducing Sports Imports\n  - SFDC: ..." — no
+# "- [products]" tail. Capture up to a dash-field, newline, or end.
+INTRODUCING_NOBRACKET_RE = re.compile(
+    r"introducing\s+(.+?)\s*(?:\n|\s+-\s+SFDC|$)",
+    re.IGNORECASE,
+)
 # "From @handle:" prefix in Account Manifest Bot messages
 FROM_HANDLE_RE = re.compile(r"From\s+@(\w+)\s*:", re.IGNORECASE)
 MANIFEST_URL_RE = re.compile(
@@ -59,33 +68,39 @@ SFDC_URL_RE = re.compile(
     r"https?://stripe\.lightning\.force\.com/lightning/r/Opportunity/(\w{15,18})/view\S*"
 )
 ACCT_ID_RE = re.compile(r"\b(acct_\w{16,})\b")
+# A Salesforce id (opp 006…, account 0015…) or Stripe acct_… is NOT a merchant
+# name — the legacy "for Accelerate: 0015b000…" form puts an id where the name
+# goes. Guard against adopting it as merchant_name.
+MERCHANT_ID_GUARD_RE = re.compile(r"^(?:006[A-Za-z0-9]{12,15}|0015[A-Za-z0-9]+|acct_\w+)$")
+# Contact email, tolerating Slack's <mailto:addr|addr> wrapping.
 CONTACT_LINE_RE = re.compile(
-    r"-\s*Contact\s*:\s*([^\n<]+?)\s*[-–—]\s*([A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,})",
+    r"-\s*Contact\s*:\s*([^\n<]+?)\s*[-–—]\s*(?:<mailto:)?([A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,})",
     re.IGNORECASE,
 )
+# Any email in the thread (used for contact-domain matching). Tolerates mailto:.
+ANY_EMAIL_RE = re.compile(r"(?:mailto:)?[A-Z0-9._%+\-]+@([A-Z0-9.\-]+\.[A-Z]{2,})", re.IGNORECASE)
+GENERIC_EMAIL_DOMAINS = {
+    "gmail.com", "icloud.com", "hotmail.com", "outlook.com", "yahoo.com",
+    "stripe.com",
+}
 TERRITORY_RE = re.compile(r"-\s*Territory\s*:\s*([^\n]+)", re.IGNORECASE)
 ELIGIBILITY_RE = re.compile(r"-\s*Current eligibility\s*:\s*([^\n]+)", re.IGNORECASE)
 AONR_RE = re.compile(r"\$\s*([\d,]+(?:\.\d+)?)\s*([KMB])?", re.IGNORECASE)
 SFDC_OPP_INLINE_RE = re.compile(r"\b(006[A-Z0-9]{15})\b")
 
 HANDOVER_PHRASE_RE = re.compile(
-    r"(coming to you|handing.{0,10}over|please review the details|setup the project|set up the project)",
+    r"(coming to you|handing.{0,10}over|please review the details|setup the project|set up the project|starting the handover process)",
     re.IGNORECASE,
+)
+# Account Manifest Bot intake format:
+#   "Thank you @maria for starting the handover process!"
+# The tagged handle is the AE/opp-owner who initiated the handover.
+THANK_YOU_STARTER_RE = re.compile(
+    r"Thank you\s+@?([\w.\-]+)\s+for starting the handover", re.IGNORECASE
 )
 THREAD_PERMALINK_RE = re.compile(
     r"https?://[\w-]+\.slack\.com/archives/(C[A-Z0-9]+)/p(\d{10})(\d+)\S*"
 )
-
-
-# ── Slug ──────────────────────────────────────────────────────────────────────
-
-def slugify(name: str) -> str:
-    s = name.lower().strip()
-    s = re.sub(r"[\[\](){}|,;:+/\\.]", " ", s)
-    s = re.sub(r"[-–—]", " ", s)
-    s = re.sub(r"[^a-z0-9\s]", "", s)
-    s = re.sub(r"\s+", "-", s).strip("-")
-    return s or "unnamed-merchant"
 
 
 # ── Permalink build ───────────────────────────────────────────────────────────
@@ -111,6 +126,17 @@ def extract_fields(text: str) -> dict:
         if m2:
             out["merchant_name"] = m2.group(1).strip()
             out["products_hint"] = m2.group(2).strip()
+        else:
+            m3 = INTRODUCING_NOBRACKET_RE.search(text)
+            if m3:
+                out["merchant_name"] = m3.group(1).strip()
+
+    # The legacy "for Accelerate: 0015b000…" / "…: 006TQ…" form drops a Salesforce
+    # id where the merchant name belongs — that's not a name, drop it so the
+    # matcher falls through to opp-id / contact-domain instead of fuzzy-matching
+    # garbage.
+    if "merchant_name" in out and MERCHANT_ID_GUARD_RE.match(out["merchant_name"]):
+        del out["merchant_name"]
 
     m = MANIFEST_URL_RE.search(text)
     if m:
@@ -150,14 +176,66 @@ def extract_fields(text: str) -> dict:
         suffix = (m.group(2) or "").upper()
         out["aonr"] = f"${m.group(1)}{suffix}" if suffix else f"${m.group(1)}"
 
+    # Merchant email domains in the thread (excludes generic providers + stripe.com).
+    # Used by handover-match.py as a fallback bind when there's no opp id / clean name.
+    domains = {
+        d.lower() for d in ANY_EMAIL_RE.findall(text)
+        if d.lower() not in GENERIC_EMAIL_DOMAINS
+    }
+    if domains:
+        out["email_domains"] = sorted(domains)
+
     return out
 
 
+def split_opp_name(raw: str) -> tuple[str, str | None]:
+    """Split an SFDC opportunity name into (merchant, products).
+
+    The bot intake format carries the merchant as the opportunity name, e.g.
+      "Acme Vacation Rentals [Payments] - $14M"  -> ("Acme Vacation Rentals", "Payments")
+      "Example Tax Law - [Payments, ThirdPartyDocs] - $18M - US" -> ("Example Tax Law", "Payments, ThirdPartyDocs")
+      "FooBar/BazCo" -> ("FooBar/BazCo", None)
+    The merchant half is noisy (region / deal size); the matcher normalizes it,
+    and on an SFDC-id match the canonical name comes from Hubble anyway.
+    """
+    raw = (raw or "").strip()
+    products = None
+    mb = re.search(r"\[([^\]]+)\]", raw)
+    if mb:
+        products = mb.group(1).strip()
+    merchant = re.split(r"\s*\[", raw)[0]
+    merchant = re.split(r"\s+[-–—]\s+", merchant)[0]
+    merchant = merchant.strip(" -–—")
+    return merchant.strip(), products
+
+
+def attachment_opp_names(messages: list[dict]) -> list[str]:
+    """Harvest SFDC opportunity names from Slack message attachments.
+
+    The Account Manifest Bot renders the opp as a Salesforce attachment whose
+    `salesforce_record.name` (or `fallback`/`title`) is the opportunity name —
+    the most reliable merchant source in the bot intake format."""
+    names: list[str] = []
+    for msg in messages:
+        for att in (msg.get("attachments") or []):
+            rec = att.get("salesforce_record") or {}
+            name = rec.get("name") or att.get("fallback") or att.get("title")
+            if name:
+                names.append(name.strip())
+    return names
+
+
 def extract_ae_handle(messages: list[dict], handle: str | None = None) -> str | None:
-    """Find the user who posted the handover phrase. Also checks for
-    'From @handle:' prefix in Account Manifest Bot messages. Falls back to
-    first non-bot sender that isn't the recipient."""
-    # Check for "From @handle:" in bot messages first (Account Manifest Bot format)
+    """Find the user who posted the handover phrase. Checks the bot intake
+    "Thank you @handle for starting…" form and the "From @handle:" prefix first,
+    then falls back to the first sender carrying the handover phrase that isn't
+    the recipient."""
+    # Bot intake format: "Thank you @maria for starting the handover process!"
+    for msg in messages:
+        m = THANK_YOU_STARTER_RE.search(msg.get("text", "") or "")
+        if m:
+            return m.group(1).strip().lstrip("@")
+    # Check for "From @handle:" in bot messages (Account Manifest Bot format)
     for msg in messages:
         text = msg.get("text", "") or ""
         m = FROM_HANDLE_RE.search(text)
@@ -232,6 +310,17 @@ def parse_slack_thread(payload: dict, my_handle: str | None = None) -> dict:
     messages = payload.get("messages") or []
     full_text = "\n\n".join((m.get("text") or "") for m in messages)
     fields = extract_fields(full_text)
+
+    # Bot intake format: merchant + products live in the SFDC opp attachment
+    # name, not in an "Accelerate:"/"introducing" header. Use it as a fallback.
+    if "merchant_name" not in fields:
+        for opp_name in attachment_opp_names(messages):
+            merchant, products = split_opp_name(opp_name)
+            if merchant:
+                fields["merchant_name"] = merchant
+                if products and "products_hint" not in fields:
+                    fields["products_hint"] = products
+                break
 
     channel_id = payload.get("channel_id")
     thread_ts = payload.get("thread_ts")

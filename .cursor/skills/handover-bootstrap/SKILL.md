@@ -129,9 +129,15 @@ If any proposals were skipped or errored, list them separately under
 
 ## Backfill Mode
 
-Third entry point for finding handover threads for projects that were already
-scaffolded from Hubble (via `scaffold-from-hubble.py`). These projects have
-`Handover: TBD` and missing contacts from the Slack thread.
+**This is the one-time, setup-side process — distinct from the daily
+`/handover-scanner`.** Backfill is *roster-driven*: it sweeps the whole channel
+and matches each **existing** project to its handover thread (coverage ~25/27).
+The daily `/handover-scanner` is *channel-driven*: it reads only since the last
+scan and surfaces **new** handovers (matched → bootstrap, unmatched → triage).
+Same parser + matcher underneath; different window, direction, and goal.
+
+Use backfill for projects that were already scaffolded from Hubble (via
+`scaffold-from-hubble.py`) and still have `Handover: TBD` / missing contacts.
 
 ### When to invoke
 
@@ -140,70 +146,73 @@ scaffolded from Hubble (via `scaffold-from-hubble.py`). These projects have
 - After `scaffold-from-hubble.py --apply` completes (step 2 in its output)
 - During initial workspace setup when projects exist but lack handover data
 
-### Phase B1 — Prepare search manifest
+### Phase B1 — Prepare match manifest
 
-Run `python3 scripts/handover-search.py` and parse the JSON output.
+Run `python3 scripts/handover-search.py` and parse the JSON output
+(`{ channel_id, searches: [{ slug, project_name, ae_handle, ... }], skipped, errors }`).
 
 If `searches` is empty, surface: "All projects already have handover links
 or are in processed_threads. Nothing to search." — then stop.
 
-Otherwise surface: "Searching for handover threads for N projects (M skipped).
-Firing N×2 Slack searches."
+Otherwise surface: "Looking for handover threads for N projects (M skipped)."
 
 ### Phase B1.5 — MCP connectivity gate
 
-Before firing Slack searches, probe connectivity with ONE call:
+Before reading Slack, probe connectivity with ONE call:
 `read_slack_channel_history` on `HANDOVER_CHANNEL_ID` with `limit: 1`.
 
 If it fails (tool not found, connection error, timeout):
 - Abort the backfill. Surface the MCP error and remediation steps
   (check Cursor MCP settings, re-authorize at go/toolshed-auth).
-- Do NOT proceed to Phase B2 — every search would fail identically.
+- Do NOT proceed to Phase B2 — every read would fail identically.
 
 If it succeeds (even empty results) → proceed.
 
-### Phase B2 — Execute parallel searches
+### Phase B2 — Read the full channel history (by ID, wide window)
 
-For each entry in the manifest's `searches` array, fire **two**
-`search_slack_messages` calls in parallel:
+Backfill is roster-driven: we already know all N projects (and their SFDC opp
+ids), so sweep the whole channel once and match each project to a thread. The
+window is **not** tied to any project's start date — read from a fixed floor that
+covers every current project:
 
 ```
-Step 1: search_slack_messages(query="{project_name} in:{channel_name}", count=5, sort="timestamp")
-Step 2: search_slack_messages(query="{ae_handle} in:{channel_name}", count=10, sort="timestamp")
+read_slack_channel_history(channel_id_or_name="{channel_id}", oldest="2025-02-01T00:00:00Z")
 ```
 
-If `ae_handle` is null for an entry, skip step 2 for that project.
+- `2025-02-01` matches the floor of the Hubble roster query (`ds_deployment_start
+  >= 2025-02-01`), so no current project's handover can predate it.
+- `channel_id` comes from the manifest. Read `HANDOVER_CHANNEL_ID_LEGACY` too if set.
+- Paginate via `cursor` until the floor is reached. Hold every root message
+  (with its `attachments`) for B3. This single wide read replaces the old N×2
+  per-merchant `search_slack_messages` calls — and because opp-id matching is
+  exact, a wide window carries no false-positive risk.
 
-**Batching**: fire up to 3 projects per message (up to 6 MCP calls). Wait
-for results before the next batch. The Slack search API rate-limits at roughly
-5 calls per burst through the MCP proxy — exceeding this triggers a
-`RateLimitedError` with no exposed Retry-After header. If rate-limited, wait
-30 seconds then resume with smaller batches (2 per message).
+### Phase B3 — Match projects to threads (deterministic coverage)
 
-**Critical**: Always use the channel **name** (from manifest's `channel_name`)
-in `search_slack_messages` queries, never the channel ID. The `in:` filter
-requires the human-readable channel name. The channel ID is only for
-`read_slack_message_thread`.
+Parse every message from B2 through `handover-parse.py --from-stdin` (one thread
+JSON per message, including `attachments`), collect the proposals into a JSON
+array, then run the **coverage** matcher:
 
-### Phase B3 — Evaluate results
+```bash
+echo '<proposals json array>' | python3 scripts/handover-match.py --proposals-stdin --coverage
+```
 
-For each project:
+It reports, against the full roster: `{ covered: [{ project_id, merchant_name,
+slug, match_method, sfdc_opp_id, thread_permalink }], missing: [...], counts: {
+roster, covered, missing, threads_in } }`. Matching tries three keys in order:
+SFDC opp id (exact — the primary signal) → merchant name (fuzzy ≥ 0.6) →
+contact-email domain (the thread's merchant-domain email vs the roster's
+`primary_contact_email`, which recovers legacy "manifest review" handovers that
+carry a Salesforce account id and no clean name). Across a full two-channel sweep
+this lands ~24/27 in practice; `missing` are projects with no clean signal in the
+channel (no opp, noisy/absent name, and no roster contact email) — surface them
+for manual lookup, not as a failure.
 
-1. **Step 1 hit** → take the first result's `thread_ts`. Read the full thread
-   via `read_slack_message_thread(channel={channel_id}, thread_ts={thread_ts})`.
-   Confirm the thread mentions the merchant name (case-insensitive substring).
-   If confirmed → proceed to proposal building.
+### Phase B4 — Build proposals and apply (covered projects only)
 
-2. **Step 1 miss, Step 2 hit** → Step 2 may return threads for multiple
-   merchants (same AE). For each returned thread, read it and check if the
-   content matches this project's `project_name` (substring or fuzzy match).
-   First confirmed match wins → proceed to proposal building.
-
-3. **Both miss** → mark as "handover not found". No retry — move on.
-
-### Phase B4 — Build proposals and apply
-
-For each confirmed thread, build a proposal JSON:
+For each entry in `covered`, read its full thread by ID
+(`read_slack_message_thread(channel={channel_id}, thread_ts={thread_ts})`) to
+capture `thread_body`, then build a proposal JSON:
 
 ```json
 {
@@ -246,26 +255,32 @@ Handle exit codes per the standard table (0=clean, 5=slug not found, etc.).
 
 ### Phase B5 — Update ae-handles.json
 
-For any project where Step 2 (AE handle search) **contributed** to finding
-the thread (i.e., Step 1 missed but Step 2 hit), read `data/ae-handles.json`,
-add `{"<ae_display_name>": "<ae_handle>"}`, and write it back. This grows the
-confirmed-handle lookup for future runs.
+If a covered thread reveals an AE handle (the `ae` field on the proposal) for a
+display name not yet in `data/ae-handles.json`, add `{"<ae_display_name>":
+"<ae_handle>"}` and write it back. This grows the confirmed-handle lookup that
+`handover-search.py` uses on future runs.
 
 ### Phase B6 — Summary
+
+Report the coverage counts from B3 directly:
 
 ```
 ## Handover backfill — <date>
 
-Found: N/M threads matched
-- <slug> — thread by @<ae>, <thread_date>
-- <slug> — thread by @<ae>, <thread_date>
+Covered: <covered>/<roster> projects matched to a handover thread
+- <merchant_name> — <thread_permalink> (via <sfdc|name>)
+- …
 
-Not found (N):
-- <slug> — no results for name or AE handle
+Missing (<missing>): no handover thread found in the channel
+- <merchant_name>
+- …
 
-Skipped (N):
-- <slug> — already has handover link
+Skipped (<from B1>): already had a handover link
+- <slug>
 ```
+
+`missing` is expected to be small (a couple of projects whose handover never went
+through the channel, or that predate it) — not a failure.
 
 ---
 

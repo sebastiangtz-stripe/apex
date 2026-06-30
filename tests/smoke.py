@@ -191,6 +191,158 @@ def test_handover_parse(r: Results):
     else:
         r.fail("handover-parse", "parse_products_hint", f"Exit {code}")
 
+    # Case 6b: parse_slack_bot_format — current Account Manifest Bot intake format
+    # ("…starting the handover process", merchant + opp id in the SFDC attachment).
+    bot_json = (FIXTURES / "handover-slack-bot-json.json").read_text()
+    code, out, err = run_script([script, "--from-stdin"], stdin_data=bot_json)
+    if code != 0:
+        r.fail("handover-parse", "parse_slack_bot_format", f"Exit {code}, stderr: {err}")
+    else:
+        try:
+            data = json.loads(out)
+            checks = []
+            if data.get("merchant_name") != "Acme Vacation Rentals":
+                checks.append(f"merchant_name={data.get('merchant_name')!r}, expected 'Acme Vacation Rentals'")
+            if "006" not in (data.get("sfdc_opp_id") or ""):
+                checks.append(f"sfdc_opp_id={data.get('sfdc_opp_id')!r}, expected contains '006'")
+            if data.get("ae") != "testae":
+                checks.append(f"ae={data.get('ae')!r}, expected 'testae'")
+            if data.get("not_a_handover"):
+                checks.append("not_a_handover set true — bot phrase not recognized")
+            if checks:
+                r.fail("handover-parse", "parse_slack_bot_format", "\n".join(checks))
+            else:
+                r.ok("handover-parse", "parse_slack_bot_format")
+        except json.JSONDecodeError as e:
+            r.fail("handover-parse", "parse_slack_bot_format", f"Invalid JSON: {e}")
+
+    # Case 6c: parse_slack_legacy_format — legacy "introducing <Merchant>" (no
+    # products bracket) + mailto-wrapped contact. Must extract merchant, the
+    # contact email, and the merchant email domain.
+    legacy_json = (FIXTURES / "handover-slack-legacy-json.json").read_text()
+    code, out, err = run_script([script, "--from-stdin"], stdin_data=legacy_json)
+    if code != 0:
+        r.fail("handover-parse", "parse_slack_legacy_format", f"Exit {code}, stderr: {err}")
+    else:
+        try:
+            data = json.loads(out)
+            checks = []
+            if data.get("merchant_name") != "Globex Imports":
+                checks.append(f"merchant_name={data.get('merchant_name')!r}, expected 'Globex Imports'")
+            if (data.get("primary_contact") or {}).get("email") != "rholt@globex.example.com":
+                checks.append(f"contact email not extracted from <mailto:..>: {data.get('primary_contact')}")
+            if "globex.example.com" not in (data.get("email_domains") or []):
+                checks.append(f"email_domains={data.get('email_domains')}, expected to include 'globex.example.com'")
+            if checks:
+                r.fail("handover-parse", "parse_slack_legacy_format", "\n".join(checks))
+            else:
+                r.ok("handover-parse", "parse_slack_legacy_format")
+        except json.JSONDecodeError as e:
+            r.fail("handover-parse", "parse_slack_legacy_format", f"Invalid JSON: {e}")
+
+
+# ── Group 1b: handover-match.py ──────────────────────────────────────────────
+
+def test_handover_match(r: Results):
+    script = str(SCRIPTS / "handover-match.py")
+    snapshot = str(FIXTURES / "handover-match-snapshot.json")
+    proposals = (FIXTURES / "handover-match-proposals.json").read_text()
+
+    # Case: classify_roster — SFDC match, name match, and one triage.
+    code, out, err = run_script(
+        [script, "--proposals-stdin", "--snapshot", snapshot], stdin_data=proposals)
+    if code != 0:
+        r.fail("handover-match", "classify_roster", f"Exit {code}, stderr: {err}")
+    else:
+        try:
+            data = json.loads(out)
+            matched = {m["match_method"]: m for m in data.get("matched", [])}
+            checks = []
+            if data["counts"].get("matched") != 2:
+                checks.append(f"matched count={data['counts'].get('matched')}, expected 2")
+            if data["counts"].get("triage") != 1:
+                checks.append(f"triage count={data['counts'].get('triage')}, expected 1")
+            if "sfdc" not in matched:
+                checks.append("no SFDC-id match (18-char proposal vs 15-char Hubble link)")
+            elif matched["sfdc"].get("merchant_name") != "Northwind Traders":
+                checks.append(f"sfdc merchant={matched['sfdc'].get('merchant_name')!r}, expected canonical 'Northwind Traders'")
+            if "name" not in matched:
+                checks.append("no name-similarity match")
+            if checks:
+                r.fail("handover-match", "classify_roster", "\n".join(checks))
+            else:
+                r.ok("handover-match", "classify_roster")
+        except (json.JSONDecodeError, KeyError) as e:
+            r.fail("handover-match", "classify_roster", f"Bad output: {e}\n{out[:300]}")
+
+    # Case: malformed_json → exit 2
+    code, out, err = run_script([script, "--proposals-stdin"], stdin_data='{"broken":')
+    if code != 2:
+        r.fail("handover-match", "malformed_json", f"Expected exit 2, got {code}")
+    else:
+        r.ok("handover-match", "malformed_json")
+
+    # Case: match_by_email_domain — no opp id, no matchable name; binds via the
+    # thread's merchant email domain against the roster primary_contact_email.
+    email_prop = json.dumps([{
+        "source": "scan", "channel_id": "C0T", "thread_ts": "9.9",
+        "thread_permalink": "https://x/9",
+        "email_domains": ["northwind.example.com"],
+    }])
+    code, out, err = run_script(
+        [script, "--proposals-stdin", "--snapshot", snapshot], stdin_data=email_prop)
+    if code != 0:
+        r.fail("handover-match", "match_by_email_domain", f"Exit {code}, stderr: {err}")
+    else:
+        try:
+            data = json.loads(out)
+            m = data.get("matched", [])
+            if len(m) == 1 and m[0].get("match_method") == "email" and m[0].get("merchant_name") == "Northwind Traders":
+                r.ok("handover-match", "match_by_email_domain")
+            else:
+                r.fail("handover-match", "match_by_email_domain",
+                       f"Expected 1 email match to Northwind, got: {data.get('counts')} {[x.get('match_method') for x in m]}")
+        except (json.JSONDecodeError, KeyError) as e:
+            r.fail("handover-match", "match_by_email_domain", f"Bad output: {e}\n{out[:300]}")
+
+    # Case: coverage_full — backfill view, both roster projects covered.
+    code, out, err = run_script(
+        [script, "--proposals-stdin", "--coverage", "--snapshot", snapshot],
+        stdin_data=proposals)
+    if code != 0:
+        r.fail("handover-match", "coverage_full", f"Exit {code}, stderr: {err}")
+    else:
+        try:
+            data = json.loads(out)
+            c = data["counts"]
+            if (c.get("roster"), c.get("covered"), c.get("missing")) != (2, 2, 0):
+                r.fail("handover-match", "coverage_full",
+                       f"Expected roster/covered/missing = 2/2/0, got "
+                       f"{c.get('roster')}/{c.get('covered')}/{c.get('missing')}")
+            else:
+                r.ok("handover-match", "coverage_full")
+        except (json.JSONDecodeError, KeyError) as e:
+            r.fail("handover-match", "coverage_full", f"Bad output: {e}\n{out[:300]}")
+
+    # Case: coverage_missing — no threads → every roster project reported missing.
+    code, out, err = run_script(
+        [script, "--proposals-stdin", "--coverage", "--snapshot", snapshot],
+        stdin_data="[]")
+    if code != 0:
+        r.fail("handover-match", "coverage_missing", f"Exit {code}, stderr: {err}")
+    else:
+        try:
+            data = json.loads(out)
+            c = data["counts"]
+            if c.get("covered") != 0 or c.get("missing") != 2:
+                r.fail("handover-match", "coverage_missing",
+                       f"Expected covered/missing = 0/2, got "
+                       f"{c.get('covered')}/{c.get('missing')}")
+            else:
+                r.ok("handover-match", "coverage_missing")
+        except (json.JSONDecodeError, KeyError) as e:
+            r.fail("handover-match", "coverage_missing", f"Bad output: {e}\n{out[:300]}")
+
 
 # ── Group 2: list-actions.py ─────────────────────────────────────────────────
 
@@ -240,7 +392,7 @@ def test_list_actions(r: Results):
             except json.JSONDecodeError as e:
                 r.fail("list-actions", "list_filter_tag", f"Invalid JSON: {e}")
 
-        # Case 9: list_filter_overdue (fixture dates are in future: 2026-05-15, 2026-05-20)
+        # Case 9: list_filter_overdue (fixture due dates are far-future: 2099-05-15, 2099-05-20)
         code, out, err = run_script([script, "--json", "--slug", slug, "--overdue"])
         if code != 0:
             r.fail("list-actions", "list_filter_overdue", f"Exit {code}, stderr: {err}")
@@ -332,11 +484,12 @@ def test_handover_create(r: Results):
 
 def main():
     print("# Smoke Tests")
-    print("_(13 cases across 4 scripts)_")
+    print("_(20 cases across 5 scripts)_")
     print()
 
     r = Results()
     test_handover_parse(r)
+    test_handover_match(r)
     test_list_actions(r)
     test_hubble_reconcile(r)
     test_handover_create(r)
