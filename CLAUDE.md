@@ -18,7 +18,7 @@ Specialized Cursor subagents live in `.cursor/agents/`. Each has its own context
 |----------|---------|-------|
 | `merchant-scanner` | Lightweight fetch relay — calls Gmail/Slack MCP, dumps raw results to `data/staging/`. No dedup, no writes to project files. | claude-4.6-sonnet |
 | `comms-analyst` | Read-only review of one merchant's full `raw/comms.md` to propose auto-closures, new action items, Asana comments, and timeline summaries. | claude-4.6-sonnet |
-| `hubble-analyst` | Refresh `data/hubble-snapshot.json` if stale, run `scripts/hubble-reconcile.py`, return structured diff. Used by Auto-Startup Agent E. | fast |
+| `hubble-analyst` | Refresh `data/hubble-snapshot.json` if stale, run `scripts/hubble-reconcile.py`, return structured diff. Used by Auto-Startup Agent E. | claude-4.6-sonnet |
 | `handover-scanner` | Read Slack handover channel(s) **by channel ID**, parse new threads via `scripts/handover-parse.py`, classify against the roster via `scripts/handover-match.py`, and return matched `proposals` + an unmatched `triage` list. Used by scan-review Phase 0. | claude-4.6-sonnet |
 | `quick-context` | Per-merchant health snapshot: status, products, AONR, engagement (days silent), action items, recent activity. Returns structured JSON. | fast |
 | `stripe-jarvis` | Any Stripe technical question (Tier 1/2/3 owned by Jarvis itself). Self-contained: searches internal docs, Trailhead, Sourcegraph, Jira, Slack, public docs. | claude-opus-4-7 |
@@ -306,7 +306,7 @@ For drift backfill: invoke `/hubble-analyst` with `backfill: true` (or run `pyth
 
 **Health report fields deliberately unused**: `overall_project_health`, `last_health_report_text`, and `days_since_last_health_report` are read but not surfaced. Current HR quality is unreliable; a separate workstream will improve it before wiring in.
 
-For column mapping, saved query ID, and matching logic, see `scripts/hubble-reconcile.py` and `.cursor/agents/hubble-analyst.md`.
+For column mapping, the query template, and matching logic, see `scripts/hubble-reconcile.py` and `.cursor/agents/hubble-analyst.md`.
 
 ---
 
