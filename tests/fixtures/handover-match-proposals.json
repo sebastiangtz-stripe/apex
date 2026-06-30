@@ -1,0 +1,25 @@
+[
+  {
+    "source": "scan",
+    "channel_id": "C0TEST1234",
+    "thread_ts": "1.1",
+    "thread_permalink": "https://test.slack.com/archives/C0TEST1234/p11",
+    "merchant_name": "Northwind",
+    "sfdc_opp_id": "006TQ00000abc12YAB"
+  },
+  {
+    "source": "scan",
+    "channel_id": "C0TEST1234",
+    "thread_ts": "2.2",
+    "thread_permalink": "https://test.slack.com/archives/C0TEST1234/p22",
+    "merchant_name": "Contoso Logistics"
+  },
+  {
+    "source": "scan",
+    "channel_id": "C0TEST1234",
+    "thread_ts": "3.3",
+    "thread_permalink": "https://test.slack.com/archives/C0TEST1234/p33",
+    "merchant_name": "Globex Corporation",
+    "sfdc_opp_id": "006ZZZZZ99999999"
+  }
+]

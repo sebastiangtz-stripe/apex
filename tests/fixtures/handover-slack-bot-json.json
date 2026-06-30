@@ -1,0 +1,23 @@
+{
+  "channel_id": "C0TEST1234",
+  "thread_ts": "1782749710.482739",
+  "permalink": "https://test-workspace.slack.com/archives/C0TEST1234/p1782749710482739",
+  "messages": [
+    {
+      "user_name": "AMER Accelerate Handovers",
+      "text": "Thank you @testae for starting the handover process!\n\nOne of our @amer-services-consultants will generate a Project Brief and link it in this thread. We will tag you when it's ready so please plan to review it for accuracy or missing info.\n\nSFDC Opp Link: <https://stripe.lightning.force.com/lightning/r/Opportunity/006TESTOPPTY12345/view>\nWhat type of support does the user need? Proactive (~5-15 hours of help)\nLanguage:  English\nAcme Vacation Rentals [Payments] - $14M",
+      "ts": "1782749710.482739",
+      "attachments": [
+        {
+          "salesforce_record": {
+            "name": "Acme Vacation Rentals [Payments] - $14M",
+            "sobject_api_name": "Opportunity"
+          },
+          "fallback": "Acme Vacation Rentals [Payments] - $14M",
+          "title": "Acme Vacation Rentals [Payments] - $14M",
+          "title_link": "https://stripe.lightning.force.com/lightning/r/Opportunity/006TESTOPPTY12345/view"
+        }
+      ]
+    }
+  ]
+}

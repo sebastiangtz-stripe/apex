@@ -1,0 +1,21 @@
+{
+  "fetched_at": "2026-06-01T00:00:00Z",
+  "lead_filter": "Test User",
+  "row_count": 2,
+  "projects": [
+    {
+      "project_id": 700001,
+      "project_name": "Northwind Traders - [Payments, Billing] - US - $250K",
+      "sfdc_opp_link": "https://stripe.lightning.force.com/lightning/r/Opportunity/006TQ00000abc12/view",
+      "account_executive": "Test AE",
+      "primary_contact_email": "ap@northwind.example.com"
+    },
+    {
+      "project_id": 700002,
+      "project_name": "Contoso Logistics - [Connect]",
+      "sfdc_opp_link": "https://stripe.lightning.force.com/lightning/r/Opportunity/006TQ00000def34/view",
+      "account_executive": "Other AE",
+      "primary_contact_email": "ops@contoso.example.com"
+    }
+  ]
+}

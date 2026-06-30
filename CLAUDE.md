@@ -19,7 +19,7 @@ Specialized Cursor subagents live in `.cursor/agents/`. Each has its own context
 | `merchant-scanner` | Lightweight fetch relay — calls Gmail/Slack MCP, dumps raw results to `data/staging/`. No dedup, no writes to project files. | claude-4.6-sonnet |
 | `comms-analyst` | Read-only review of one merchant's full `raw/comms.md` to propose auto-closures, new action items, Asana comments, and timeline summaries. | claude-4.6-sonnet |
 | `hubble-analyst` | Refresh `data/hubble-snapshot.json` if stale, run `scripts/hubble-reconcile.py`, return structured diff. Used by Auto-Startup Agent E. | fast |
-| `handover-scanner` | Scan Slack handover channel(s) for new merchant threads, parse via `scripts/handover-parse.py`, return proposals. Used by scan-review Phase 0. | claude-4.6-sonnet |
+| `handover-scanner` | Read Slack handover channel(s) **by channel ID**, parse new threads via `scripts/handover-parse.py`, classify against the roster via `scripts/handover-match.py`, and return matched `proposals` + an unmatched `triage` list. Used by scan-review Phase 0. | claude-4.6-sonnet |
 | `quick-context` | Per-merchant health snapshot: status, products, AONR, engagement (days silent), action items, recent activity. Returns structured JSON. | fast |
 | `stripe-jarvis` | Any Stripe technical question (Tier 1/2/3 owned by Jarvis itself). Self-contained: searches internal docs, Trailhead, Sourcegraph, Jira, Slack, public docs. | claude-opus-4-7 |
 
@@ -508,12 +508,12 @@ Suggest changes when:
 ## Project Lifecycle
 
 1. **Create**: New merchant detected via one of three sources:
-   - **Slack handover scan** (preferred — fully automated): scan-review Phase 0 invokes `/handover-scanner` which finds new threads in `#ven-ext-stripe-accelerate-amer` (and the legacy `#accelerate-qualification`), parses them via `scripts/handover-parse.py`, and hands proposals to the `handover-bootstrap` skill. The skill runs `scripts/handover-create.py` which creates the folder + PROJECT.md (HO+MAN+SFDC+contact+AE pre-filled), Asana task, Hubble backfill, and appends to `data/handover-state.json`. No manual steps.
+   - **Slack handover scan** (preferred — fully automated): scan-review Phase 0 invokes `/handover-scanner` which **reads** `#ven-ext-stripe-accelerate-amer` (and the legacy `#accelerate-qualification`) by channel ID, parses new threads via `scripts/handover-parse.py`, and classifies them against the roster via `scripts/handover-match.py`. Roster-matched threads become `proposals` handed to the `handover-bootstrap` skill; handover-shaped threads that match no roster row are surfaced as `triage` (never auto-bootstrapped). The skill runs `scripts/handover-create.py` which creates the folder + PROJECT.md (HO+MAN+SFDC+contact+AE pre-filled), Asana task, Hubble backfill, and appends to `data/handover-state.json`. No manual steps. (Retrieval is by channel ID, never by channel name — searching by name previously zeroed retrieval.)
    - **Manual paste** (same pipeline, paste mode): user pastes a Slack permalink or thread text → `handover-bootstrap` skill triggers the same `handover-create.py` flow.
    - **Hubble snapshot NEW rows or manual creation**: path for projects without a Slack handover. Sequence is order-sensitive:
      1. Create `projects/active/<slug>/` with template files (or run `python3 scripts/scaffold-from-hubble.py --apply`).
      2. Run `python3 scripts/hubble-reconcile.py --backfill --slug <slug>` — populates External Links, AONR, dates, Email search, and Key Contacts from Hubble contact data.
-     3. **Search for handover thread**: search the handover channel (`HANDOVER_CHANNEL_ID`) by merchant name and/or AE name. If found, run `scripts/handover-parse.py` on it to extract contacts and populate `## Key Contacts`, `Handover:` link, and `raw/comms.md`. If not found, add timeline entry: "Handover: not found — manual lookup needed."
+     3. **Search for handover thread**: read the handover channel by ID (`read_slack_channel_history` on `HANDOVER_CHANNEL_ID`) and filter in code by merchant name and/or AE name — never `search_slack_messages`/`in:<name>`. If found, run `scripts/handover-parse.py` on it to extract contacts and populate `## Key Contacts`, `Handover:` link, and `raw/comms.md`. If not found, add timeline entry: "Handover: not found — manual lookup needed."
      4. Run `python3 scripts/sync-to-asana.py --slug <slug>` — creates the Asana task with the now-populated PROJECT.md (contacts, links, Email search all filled). **Always run AFTER backfill + handover search** so the Asana description is complete.
 2. **Track**: Log meetings, emails, Slack, decisions, action items (dual-write: Asana + local)
 3. **Investigate**: Use Stripe tools when issues arise, log findings
